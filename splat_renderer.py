@@ -1,29 +1,25 @@
 """
-========================================================================================
-MASt3R-SLAM: 144+ FPS 3D Gaussian Splatting (3DGS) Donanımsal Görselleştirici
-========================================================================================
-Bu dosya, hesaplanan 3D Gaussian Splatting modelini (6.2M+ Splat) donanımsal GPU
-OpenGL hızlandırması ile 144+ FPS akıcılıkta ekrana çizen ANA GÖRÜNTÜLEYİCİDİR.
-
-İçerdiği Başlıca Sistemler:
-1. ⚡ Donanımsal NVIDIA GeForce RTX 4060 GPU Hızlandırması & VBO Çizim Motoru
-2. 🎮 HUDControllerPro: Yarı saydam 2B Kontrol Paneli, Cetvel Kartı & Toast Bildirimleri
-3. 🏠 CeilingCuller: Tavan Gizleme / Kesme Sistemi ([G] ve [7]/[8] Tuşları)
-4. 🗺️ FloorplanEstimator: 90° Kuşbakışı Mimari Kat Planı ve m² Alan Hesabı ([T] Tuşu)
-5. 📏 LaserRuler: 3B Metrik Lazer Cetvel & Mesafe Ölçüm Aracı ([E] Tuşu)
-6. 🎬 VideoRecorder: 60 FPS Pürüzsüz MP4 Video Kaydedici ([V] Tuşu)
-7. 🌐 Web 3B Çıktı: Tek Tıkla Web/HTML 3B Model Dışa Aktarıcı ([K] Tuşu)
-8. 🔍 Kamera Zoom ([+/- / Tekerlek]), Splat Boyutu ([X/C]), Sağ/Sol Ayna ([Y/A])
-========================================================================================
+MASt3R-SLAM: 144+ FPS Dedicated NVIDIA RTX 3D Mesh Viewer
+----------------------------------------------------------
+1. Donanımsal NVIDIA GeForce RTX 4060 GPU Hızlandırması
+2. 🏠 Tavan Gizleme / Kesme Sistemi ([G] Tuşu & Kuşbakışında Otomatik)
+3. ✂️ Tavan Kesme Yüksekliği Ayarı ([7] / [8] Tuşları)
+4. 🗺️ 2B Kat Planı & m² Alan Hesabı ([T] Kuşbakışı)
+5. 📏 3B Metrik Lazer Cetvel & Mesafe Ölçüm Aracı ([E] Tuşu)
+6. 🎬 60 FPS Pürüzsüz MP4 Video Kaydedici ([V] Tuşu)
+7. 🌐 Tek Tıkla Web / HTML 3B Model Çıktısı ([K] Tuşu)
+8. 🔍 Büyütme/Küçültme Zoom ([+/- / Tekerlek]), Sağ/Sol Ayna ([Y/A])
+9. 🎮 Şık Yarı Saydam Kontrol Paneli ([H] veya [TAB])
 """
 
 import sys
 import os
 import math
 import time
+import ctypes
 import numpy as np
 
-# Windows Optimus / Çift Ekran Kartlı Laptoplar için Harici NVIDIA RTX GPU'yu Zorlama
+# Windows Optimus / Hybrid Laptop için NVIDIA GPU Zorlaması
 os.environ["SHIM_MCCOMPAT"] = "0x000000001"
 os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
 os.environ["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
@@ -33,35 +29,22 @@ from pygame.locals import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
-# Pro özellik modüllerinin içe aktarılması
 from pro_features import (
     CeilingCuller, LaserRuler, VideoRecorder,
-    FloorplanEstimator, export_to_standalone_html,
-    ProximityHeatmapEngine
+    FloorplanEstimator, export_to_standalone_html
 )
-from tunnel_report_generator import generate_tunnel_report
-
 
 
 def draw_frustum(pos, size=0.15, color=(1.0, 0.25, 0.25)):
-    """
-    Kameranın o anki konumunu ve baktığı yönü gösteren 3B piramit (frustum) çizer.
-    
-    Parametreler:
-        pos   : Kameranın (X, Y, Z) dünya koordinatları
-        size  : Çizilecek koninin boyutu
-        color : RGB renk kodu (Örn: Kırmızı [1.0, 0.25, 0.25])
-    """
+    """Kamera konisi/piramidi çizer."""
     x, y, z = pos
     s = size
     glColor3f(*color)
     glBegin(GL_LINES)
-    # Kameranın tepe noktasından 4 köşeye uzanan çizgiler
     glVertex3f(x, y, z); glVertex3f(x - s, y + s*0.6, z + s*1.5)
     glVertex3f(x, y, z); glVertex3f(x + s, y + s*0.6, z + s*1.5)
     glVertex3f(x, y, z); glVertex3f(x - s, y - s*0.6, z + s*1.5)
     glVertex3f(x, y, z); glVertex3f(x + s, y - s*0.6, z + s*1.5)
-    # Taban dikdörtgenini oluşturan 4 kenar çizgisi
     glVertex3f(x - s, y + s*0.6, z + s*1.5); glVertex3f(x + s, y + s*0.6, z + s*1.5)
     glVertex3f(x + s, y + s*0.6, z + s*1.5); glVertex3f(x + s, y - s*0.6, z + s*1.5)
     glVertex3f(x + s, y - s*0.6, z + s*1.5); glVertex3f(x - s, y - s*0.6, z + s*1.5)
@@ -69,15 +52,11 @@ def draw_frustum(pos, size=0.15, color=(1.0, 0.25, 0.25)):
     glEnd()
 
 
-class HUDControllerPro:
-    """
-    2B Yarı Saydam Kontrol Paneli, Durum Çubuğu, Bildirimler ve Cetvel Kartı Yöneticisi.
-    Pygame 2B Surface üzerinde çizilip OpenGL 2D Texture olarak ekrana yansıtılır.
-    """
+class HUDControllerSLAMPro:
+    """MASt3R-SLAM için 2B Yarı Saydam Kontrol Paneli, Cetvel ve Analiz Kartı."""
 
     def __init__(self):
         pygame.font.init()
-        # Sistem fontlarını yükle (Varsayılan Segoe UI veya Arial)
         try:
             self.font_title = pygame.font.SysFont("Segoe UI", 16, bold=True)
             self.font_bold = pygame.font.SysFont("Segoe UI", 13, bold=True)
@@ -89,25 +68,21 @@ class HUDControllerPro:
             self.font_norm = pygame.font.Font(None, 14)
             self.font_small = pygame.font.Font(None, 13)
 
-        self.tex_id = None          # OpenGL Texture Kimliği (Lazy initialization ile GPU context oluştuktan sonra tahsis edilir)
-        self.show_panel = True      # [H] veya [TAB] ile kontrol paneli açık/kapalı durumu
-        self.toast_msg = ""         # Üstte beliren anlık bildirim metni
-        self.toast_timer = 0        # Bildirimin ekranda kalma süresi
+        self.tex_id = None
+        self.show_panel = True
+        self.toast_msg = ""
+        self.toast_timer = 0
 
     def set_toast(self, msg, duration=2.8):
-        """Kullanıcı bir tuşa bastığında üstte şık bir bildirim kutusu gösterir."""
         self.toast_msg = msg
         self.toast_timer = time.time() + duration
 
-    def build_surface(self, win_w, win_h, fps, num_splats, cam_fov, is_flipped,
-                      ruler, recorder, room_bounds, top_down_view, culler):
-        """Tüm 2B arayüz kartlarını saydam Pygame Surface üzerinde çizer."""
+    def build_surface(self, win_w, win_h, fps, num_verts, num_faces, cam_fov,
+                      render_mode, is_flipped, ruler, recorder, room_bounds, top_down_view, culler):
         surf = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
         now = time.time()
 
-        # ---------------------------------------------------------------------
         # 1. Bildirim Mesajı (Toast Notification)
-        # ---------------------------------------------------------------------
         if now < self.toast_timer and self.toast_msg:
             tw, th = 520, 42
             tx = (win_w - tw) // 2
@@ -117,9 +92,7 @@ class HUDControllerPro:
             t_txt = self.font_bold.render(self.toast_msg, True, (255, 255, 255))
             surf.blit(t_txt, (tx + (tw - t_txt.get_width()) // 2, ty + 11))
 
-        # ---------------------------------------------------------------------
-        # 2. Üst Durum Çubuğu (FPS, Splat Sayısı, Zoom, Tavan ve Kayıt Durumu)
-        # ---------------------------------------------------------------------
+        # 2. Üst Durum Çubuğu
         bar_w, bar_h = 670, 36
         bx, by = 16, 16
         pygame.draw.rect(surf, (12, 18, 28, 210), (bx, by, bar_w, bar_h), border_radius=6)
@@ -127,7 +100,7 @@ class HUDControllerPro:
 
         tavan_durum = f"🏠 Tavan: {'KAPALI (%{:.0f})'.format(culler.cut_ratio*100) if culler.enabled else 'AÇIK'}"
         rec_icon = "🔴 KAYITTA" if recorder.recording else ""
-        stat_text = f"⚡ {fps} FPS  |  🔮 {num_splats:,} Splats  |  🔍 Zoom: {cam_fov:.0f}°  |  {tavan_durum}  |  🪞 Ayna: {'DÜZELTİLDİ' if is_flipped else 'ORİJİNAL'} {rec_icon}"
+        stat_text = f"⚡ {fps} FPS  |  🏗️ {num_faces:,} Üçgen  |  🔍 Zoom: {cam_fov:.0f}°  |  {tavan_durum}  |  🪞 Ayna: {'DÜZELTİLDİ' if is_flipped else 'ORİJİNAL'} {rec_icon}"
         stat_surf = self.font_bold.render(stat_text, True, (0, 230, 190))
         surf.blit(stat_surf, (bx + 12, by + 9))
 
@@ -139,9 +112,7 @@ class HUDControllerPro:
         h_txt = self.font_bold.render("[H] Kontrol Paneli", True, (255, 255, 255))
         surf.blit(h_txt, (btn_x + 12, by + 9))
 
-        # ---------------------------------------------------------------------
-        # 3. 3B Lazer Cetvel Ölçüm Bilgi Kartı (Cetvel Aktifken Sağ Üstte)
-        # ---------------------------------------------------------------------
+        # 3. Cetvel Ölçüm Bilgi Kartı (Aktifken)
         if ruler.active:
             rw, rh = 340, 95
             rx = win_w - rw - 16
@@ -167,9 +138,7 @@ class HUDControllerPro:
                 h_s = self.font_norm.render(hint, True, (255, 220, 100))
                 surf.blit(h_s, (rx + 12, ry + 42))
 
-        # ---------------------------------------------------------------------
-        # 4. Kuşbakışı Kat Planı ve Net Alan Hesabı Kartı ([T] Kuşbakışında)
-        # ---------------------------------------------------------------------
+        # 4. Kuşbakışı Kat Planı & Alan Hesabı Kartı (Top-Down aktifken)
         if top_down_view and room_bounds is not None:
             fw, fh = 370, 115
             fx = win_w - fw - 16
@@ -189,9 +158,7 @@ class HUDControllerPro:
             tavan_hint = f"🏠 Tavan Gizlendi: %{culler.cut_ratio*100:.0f} Seviye ([7]/[8] Ayarla)"
             surf.blit(self.font_small.render(tavan_hint, True, (255, 200, 80)), (fx + 12, fy + 84))
 
-        # ---------------------------------------------------------------------
-        # 5. Tam Kontrol Paneli Kartı ([H] veya [TAB] ile Açılır/Kapanır)
-        # ---------------------------------------------------------------------
+        # 5. Tam Kontrol Paneli Kartı (Açıkken)
         if self.show_panel:
             pw, ph = 430, 500
             px, py = 16, 62
@@ -199,7 +166,7 @@ class HUDControllerPro:
             pygame.draw.rect(surf, (10, 15, 24, 235), (px, py, pw, ph), border_radius=10)
             pygame.draw.rect(surf, (0, 160, 255, 160), (px, py, pw, ph), width=2, border_radius=10)
 
-            title_surf = self.font_title.render("🎮 3DGS KONTROL MERKEZİ", True, (0, 215, 255))
+            title_surf = self.font_title.render("🎮 MASt3R-SLAM KONTROL MERKEZİ", True, (0, 215, 255))
             surf.blit(title_surf, (px + 16, py + 12))
 
             sub_surf = self.font_small.render("[H] / [TAB] ile paneli gizle veya göster", True, (150, 170, 195))
@@ -207,7 +174,6 @@ class HUDControllerPro:
 
             pygame.draw.line(surf, (35, 50, 75), (px + 14, py + 52), (px + pw - 14, py + 52), 1)
 
-            # Kontrol tuşlarının açıklamaları
             controls = [
                 ("🕹️ HAREKET & UÇUŞ", ""),
                 ("[W / A / S / D]", "İleri / Sol / Geri / Sağ Serbest Uçuş"),
@@ -218,23 +184,21 @@ class HUDControllerPro:
                 ("[+] / [-]", "🔍 Kamera Yakınlaş (Büyüt) / Uzaklaş (Küçült)"),
                 ("[Fare Tekerleği]", "🔍 Hızlı Kamera Büyüt / Küçült"),
                 ("[0] (Sıfır)", "Standart Zoom Açısına Sıfırla (60°)"),
-                ("[X] / [C]", "🔮 Splat Nokta Boyutunu Büyüt / Küçült"),
                 ("", ""),
                 ("🏠 MİMARİ & TAVAN KESME ARAÇLARI", ""),
                 ("[G] Tuşu", "🏠 Tavanı Gizle / Aç (İç Mekanı Kuşbakışı Gör)"),
                 ("[7] / [8]", "✂️ Tavan Kesme Yüksekliğini Alçalt / Yükselt"),
                 ("[T] Tuşu", "🗺️ 90° Kuşbakışı Kat Planı ve m² Alan Hesabı"),
                 ("[E] Tuşu", "📏 3B Lazer Cetvel (İki Nokta Arası Metre Ölçümü)"),
-                ("[U] Tuşu", "⚠️ Tünel Darboğaz & Tehlike Isı Haritası (<1.1m)"),
-                ("[J] Tuşu", "📄 Tünel İnceleme & PDF/HTML Raporu Üret"),
                 ("", ""),
-                ("🚀 PRO ÇIKTI VE VİDEO", ""),
+                ("🚀 MEŞ & PRO ÇIKTI", ""),
+                ("[M] Tuşu", f"🎨 Görünüm Değiştir ({render_mode.upper()})"),
+                ("[L] Tuşu", "💡 Dinamik Işıklandırma Aç / Kapat"),
                 ("[V] Tuşu", "🎬 60 FPS MP4 Video Kaydını Başlat / Durdur"),
                 ("[K] Tuşu", "🌐 Bağımsız Web / HTML 3B Modelini Dışa Aktar"),
                 ("[Y] / [A]", "🪞 Sağ / Sol Yönünü Tersine Çevir (Ayna)"),
                 ("[P] Tuşu", "🎥 Sinematik Tur | [R]: Başa Sıfırla"),
             ]
-
 
             cy = py + 58
             for key_txt, desc_txt in controls:
@@ -257,13 +221,11 @@ class HUDControllerPro:
 
         return surf
 
-    def render_gl(self, win_w, win_h, fps, num_splats, cam_fov, is_flipped,
-                  ruler, recorder, room_bounds, top_down_view, culler):
-        """2B Arayüzü OpenGL 2D Texture olarak 3B sahnenin üzerine çizer."""
-        surf = self.build_surface(win_w, win_h, fps, num_splats, cam_fov, is_flipped,
-                                  ruler, recorder, room_bounds, top_down_view, culler)
+    def render_gl(self, win_w, win_h, fps, num_verts, num_faces, cam_fov,
+                  render_mode, is_flipped, ruler, recorder, room_bounds, top_down_view, culler):
+        surf = self.build_surface(win_w, win_h, fps, num_verts, num_faces, cam_fov,
+                                  render_mode, is_flipped, ruler, recorder, room_bounds, top_down_view, culler)
 
-        # 3B derinlik testini geçici devre dışı bırakarak 2B arayüzü en üste bas
         glPushAttrib(GL_ALL_ATTRIB_BITS)
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_LIGHTING)
@@ -286,7 +248,6 @@ class HUDControllerPro:
         else:
             rgba_data = pygame.image.tostring(surf, "RGBA", True)
 
-        # Lazy texture initialization (İlk render çağrısında OpenGL dokusu üretilir)
         if self.tex_id is None:
             self.tex_id = glGenTextures(1)
 
@@ -312,111 +273,128 @@ class HUDControllerPro:
         glPopAttrib()
 
 
-# ======================================================================================
-# 🎮 ANA GÖRÜNTÜLEYİCİ VE OYUN DÖNGÜSÜ (view_gaussian_splats)
-# ======================================================================================
-def view_gaussian_splats(ply_path="gaussian_scene.ply"):
-    """
-    3D Gaussian Splats modelini GPU önbelleğinden 0.1 sn içinde yükler ve 144+ FPS ile açar.
-    """
+def view_mast3r_map(ply_path="mast3r_map.ply"):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     target_ply = os.path.join(base_dir, ply_path)
     cache_path = target_ply.replace(".ply", "_cache.npz")
-    traj_path = os.path.join(base_dir, "gaussian_trajectory.npz")
 
-    xyz, rgb, scales, opacity = None, None, None, None
-    auto_waypoints = []
+    verts, cols, norms, faces = None, None, None, None
+    render_mode = "mesh"
 
-    # 1. ⚡ Hızlı Önbellek Yüklemesi (.npz)
     if os.path.exists(cache_path):
         t0 = time.time()
         data = np.load(cache_path, allow_pickle=True)
-        xyz = np.ascontiguousarray(data["xyz"], dtype=np.float32)
-        rgb = np.ascontiguousarray(data["rgb"], dtype=np.float32)
-        scales = np.ascontiguousarray(data["scales"], dtype=np.float32) if "scales" in data else None
-        opacity = np.ascontiguousarray(data["opacity"], dtype=np.float32) if "opacity" in data else None
-        print(f" ⚡ 3D Gaussian Splats Önbellekten Yüklendi: {len(xyz):,} Splat ({time.time()-t0:.2f}s)")
-    elif os.path.exists(os.path.join(base_dir, "gaussian_scene_cache.npz")):
-        # İstenen dosya henüz taranmamışsa varsayılan hazır sahneyi yükle
-        print(f" ℹ️ '{os.path.basename(target_ply)}' henüz taranmamış, hazır 'gaussian_scene' modeli yükleniyor...")
-        data = np.load(os.path.join(base_dir, "gaussian_scene_cache.npz"), allow_pickle=True)
-        xyz = np.ascontiguousarray(data["xyz"], dtype=np.float32)
-        rgb = np.ascontiguousarray(data["rgb"], dtype=np.float32)
-        scales = np.ascontiguousarray(data["scales"], dtype=np.float32) if "scales" in data else None
-        opacity = np.ascontiguousarray(data["opacity"], dtype=np.float32) if "opacity" in data else None
+        if "verts" in data and "faces" in data:
+            verts = np.ascontiguousarray(data["verts"], dtype=np.float32)
+            cols = np.ascontiguousarray(data["cols"], dtype=np.float32)
+            faces = np.ascontiguousarray(data["faces"], dtype=np.uint32)
+            norms = np.ascontiguousarray(data["norms"], dtype=np.float32) if "norms" in data else None
+            print(f" ⚡ Katı Meş Önbellekten Yüklendi: {len(verts):,} Köşe | {len(faces):,} Üçgen ({time.time()-t0:.2f}s)")
+        else:
+            verts = np.ascontiguousarray(data["pts"], dtype=np.float32)
+            cols = np.ascontiguousarray(data["cols"], dtype=np.float32)
+            faces = None
+            render_mode = "points"
+    elif os.path.exists(target_ply):
+        print(f" 📂 3B Model Yükleniyor: {target_ply}...")
+        import trimesh
+        mesh = trimesh.load(target_ply, process=False)
+        verts = np.ascontiguousarray(mesh.vertices, dtype=np.float32)
+        if hasattr(mesh.visual, 'vertex_colors') and mesh.visual.vertex_colors is not None:
+            cols = np.ascontiguousarray(mesh.visual.vertex_colors[:, :3] / 255.0, dtype=np.float32)
+        else:
+            cols = np.ones_like(verts, dtype=np.float32) * 0.8
+        if hasattr(mesh, 'faces') and len(mesh.faces) > 0:
+            faces = np.ascontiguousarray(mesh.faces, dtype=np.uint32)
+            render_mode = "mesh"
     else:
-        print(" ⏳ Gaussian Splatting önbelleği bulunamadı! 'mast3r_to_3dgs.py' ile üretiliyor...")
-        import mast3r_to_3dgs
-        out_f = mast3r_to_3dgs.build_gaussian_splats_from_mast3r()
-        if out_f and os.path.exists(out_f.replace(".ply", "_cache.npz")):
-            data = np.load(out_f.replace(".ply", "_cache.npz"), allow_pickle=True)
-            xyz = np.ascontiguousarray(data["xyz"], dtype=np.float32)
-            rgb = np.ascontiguousarray(data["rgb"], dtype=np.float32)
-
-    if xyz is None or len(xyz) == 0:
-        print(f"\n❌ HATA: '{ply_path}' için geçerli 3B nokta verisi bulunamadı!")
-        print(" -> Lütfen önce 'calistir_canli_dron.bat' ile canlı bir tarama yapın veya 'ofis_videosunu_yeniden_isle.bat' çalıştırın.")
+        print("❌ HATA: Harita dosyası bulunamadı!")
         return
 
-    # 2. Kamera Uçuş Yörüngesini Yükle
+    if norms is None:
+        norms = np.zeros_like(verts, dtype=np.float32)
+        norms[:, 1] = 1.0
+
+    traj_path = os.path.join(base_dir, "mast3r_trajectory.npz")
+    auto_waypoints = []
     if os.path.exists(traj_path):
         traj_data = np.load(traj_path, allow_pickle=True)
         auto_waypoints = traj_data["positions"].copy()
 
-    # 🪞 Sağ/Sol Tersliğini Düzelt (Varsayılan olarak aynalama düzeltilir)
+    # 🪞 SAĞ/SOL DÜZELTMESİ
     is_flipped = True
-    num_splats = len(xyz)
-    room_bounds = FloorplanEstimator.calculate_bounds(xyz)
+    verts[:, 0] = -verts[:, 0]
+    if norms is not None:
+        norms[:, 0] = -norms[:, 0]
+    if len(auto_waypoints) > 0:
+        auto_waypoints[:, 0] = -auto_waypoints[:, 0]
 
-    # Modül Yöneticilerini Başlat
+    room_bounds = FloorplanEstimator.calculate_bounds(verts)
+
+    # Modül Yöneticileri
     culler = CeilingCuller()
-    culler.init_from_bounds(xyz)
+    culler.init_from_bounds(verts)
     ruler = LaserRuler()
     recorder = VideoRecorder()
-    heatmap_engine = ProximityHeatmapEngine()
-    hud = HUDControllerPro()
-    hud.set_toast("✨ 3DGS Hazır! [G] Tavanı Gizle, [T] Kuşbakışı, [U] Isı Haritası, [J] Rapor", 4.0)
+    hud = HUDControllerSLAMPro()
+    hud.set_toast("✨ MASt3R-SLAM Hazır! [G] Tavanı Gizle, [T] Kuşbakışı, [E] Cetvel, [H] Menü", 4.0)
 
-    # RGBA Renk Matrisini Hazırla (Renk + Opaklık)
-    if opacity is not None:
-        rgba = np.column_stack([rgb, opacity]).astype(np.float32)
-    else:
-        rgba = np.column_stack([rgb, np.ones(num_splats, dtype=np.float32)]).astype(np.float32)
-    original_rgba = rgba.copy()
-
-    rgba = np.ascontiguousarray(rgba, dtype=np.float32)
-
-    # Pygame & OpenGL Penceresini Başlat
     pygame.init()
-    win_w, win_h = 1280, 720
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLEBUFFERS, 1)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLESAMPLES, 2)
+
+    win_w, win_h = 1280, 720
     pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL | RESIZABLE)
 
     gpu_vendor = glGetString(GL_VENDOR).decode(errors='replace')
     gpu_renderer = glGetString(GL_RENDERER).decode(errors='replace')
-    print(f" 🚀 Aktif 3DGS GPU Donanımı: {gpu_renderer} ({gpu_vendor})")
-    pygame.display.set_caption(f"3D Gaussian Splatting Ultimate [{gpu_renderer}]")
+    print(f" 🚀 Aktif 3B GPU Donanımı: {gpu_renderer} ({gpu_vendor})")
 
-    # OpenGL Render Ayarları
+    pygame.display.set_caption(f"MASt3R-SLAM Ultimate [{gpu_renderer}]")
+
     glEnable(GL_DEPTH_TEST)
     glDepthFunc(GL_LEQUAL)
     glDisable(GL_CULL_FACE)
-    glEnable(GL_POINT_SMOOTH)
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glShadeModel(GL_SMOOTH)
+    glEnable(GL_NORMALIZE)
+    glEnable(GL_MULTISAMPLE)
 
-    # GPU VBO (Vertex Buffer Object) Bellek Tahsisleri
-    vbo_xyz = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
-    glBufferData(GL_ARRAY_BUFFER, xyz.nbytes, xyz, GL_STATIC_DRAW)
+    # Işıklandırma Ayarları
+    glEnable(GL_COLOR_MATERIAL)
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
+    glLightfv(GL_LIGHT0, GL_AMBIENT, [0.45, 0.45, 0.45, 1.0])
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, [0.85, 0.85, 0.85, 1.0])
+    glLightfv(GL_LIGHT0, GL_SPECULAR, [0.25, 0.25, 0.25, 1.0])
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE)
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, [0.3, 0.3, 0.3, 1.0])
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 32.0)
 
-    vbo_rgba = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-    glBufferData(GL_ARRAY_BUFFER, rgba.nbytes, rgba, GL_STATIC_DRAW)
-    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    # GPU VBO'ları
+    vbo_verts = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+    glBufferData(GL_ARRAY_BUFFER, verts.nbytes, verts, GL_STATIC_DRAW)
 
-    # Zemin Izgarası VBO (Y=0 Düzlemi)
+    vbo_cols = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_cols)
+    glBufferData(GL_ARRAY_BUFFER, cols.nbytes, cols, GL_STATIC_DRAW)
+
+    vbo_norms = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
+    glBufferData(GL_ARRAY_BUFFER, norms.nbytes, norms, GL_STATIC_DRAW)
+
+    vbo_faces = None
+    if faces is not None and len(faces) > 0:
+        flat_faces = faces.flatten()
+        vbo_faces = glGenBuffers(1)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_faces)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, flat_faces.nbytes, flat_faces, GL_STATIC_DRAW)
+        num_indices = len(flat_faces)
+    else:
+        num_indices = 0
+
+    # Zemin Izgarası VBO (Y=0)
     grid_verts = []
     for i in range(-50, 51, 2):
         fi = float(i)
@@ -429,7 +407,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     glBufferData(GL_ARRAY_BUFFER, grid_arr.nbytes, grid_arr, GL_STATIC_DRAW)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-    # Yörünge Çizgisi VBO (Yeşil Rota)
+    # Yörünge Çizgisi VBO
     vbo_traj = None
     traj_n = 0
     if len(auto_waypoints) > 0:
@@ -440,9 +418,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         glBufferData(GL_ARRAY_BUFFER, traj_arr.nbytes, traj_arr, GL_STATIC_DRAW)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-    glClearColor(0.04, 0.05, 0.08, 1.0)
+    glClearColor(0.06, 0.08, 0.12, 1.0)
 
-    # Başlangıç Kamera Konumu
     if len(auto_waypoints) > 0:
         drone_x, drone_y, drone_z = float(auto_waypoints[0][0]), float(auto_waypoints[0][1]), float(auto_waypoints[0][2])
     else:
@@ -453,13 +430,13 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
     flight_speed = 0.22
 
-    cam_fov = 60.0              # Görüş alanı (FOV / Zoom)
-    splat_point_size = 3.8      # Splat nokta büyüklüğü
-    auto_tour = False           # Sinematik tur aktif mi?
+    cam_fov = 60.0
+    auto_tour = False
     tour_progress = 0.0
     tour_speed = 1.0
-    show_frustums = True        # Kamera piramitleri açık mı?
-    top_down_view = False       # Kuşbakışı modu açık mı?
+    lighting_enabled = True
+    show_frustums = True
+    top_down_view = False
 
     clock = pygame.time.Clock()
     mouse_down_left = False
@@ -469,21 +446,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     fps_timer = time.time()
     frame_count = 0
     current_fps = 144
+    num_f = len(faces) if faces is not None else 0
 
-    # =========================================================================
-    # 🔄 ANA ETKİLEŞİM VE RENDER DÖNGÜSÜ
-    # =========================================================================
     while running:
         dt = clock.tick(144) / 1000.0
         frame_count += 1
-        # FPS Sayacı Hesaplama
         if time.time() - fps_timer >= 0.5:
             current_fps = int(frame_count / (time.time() - fps_timer))
-            pygame.display.set_caption(f"3DGS Ultimate [{current_fps} FPS | {num_splats:,} Gaussians | FOV: {cam_fov:.0f}°]")
+            pygame.display.set_caption(f"MASt3R-SLAM Ultimate [{current_fps} FPS | {num_f:,} Üçgen | FOV: {cam_fov:.0f}°]")
             frame_count = 0
             fps_timer = time.time()
 
-        # Olay (Event) Yakalama (Klavye & Fare)
         for event in pygame.event.get():
             if event.type == QUIT:
                 running = False
@@ -491,19 +464,18 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                 win_w, win_h = event.w, event.h
                 glViewport(0, 0, win_w, win_h)
             elif event.type == MOUSEBUTTONDOWN:
-                if event.button == 1:  # Fare Sol Tık
+                if event.button == 1:
                     if ruler.active:
-                        # Lazer cetvel aktifken tıklanan noktanın metresini ölç
                         picked = ruler.add_point_from_screen(event.pos[0], event.pos[1], win_w, win_h)
                         if picked is not None and ruler.last_distance is not None:
                             hud.set_toast(f"📏 Ölçüldü: {ruler.last_distance:.2f} Metre", 3.0)
                     else:
                         mouse_down_left = True
                         last_mouse_pos = event.pos
-                elif event.button == 4:  # Tekerlek Yukarı -> Zoom In (Büyüt)
+                elif event.button == 4:
                     cam_fov = max(15.0, cam_fov - 3.0)
                     hud.set_toast(f"🔍 Zoom In: {cam_fov:.0f}°", 1.2)
-                elif event.button == 5:  # Tekerlek Aşağı -> Zoom Out (Küçült)
+                elif event.button == 5:
                     cam_fov = min(110.0, cam_fov + 3.0)
                     hud.set_toast(f"🔍 Zoom Out: {cam_fov:.0f}°", 1.2)
             elif event.type == MOUSEBUTTONUP:
@@ -521,57 +493,43 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                 if event.key in (K_h, K_TAB):
                     hud.show_panel = not hud.show_panel
                 elif event.key == K_g:
-                    # 🏠 Tavanı Gizle / Aç
                     c_state = culler.toggle()
                     hud.set_toast(f"🏠 Tavan: {'GİZLENDİ (İç Mekan Açıldı)' if c_state else 'GÖSTERİLİYOR'}", 2.5)
                 elif event.key in (K_7, K_KP7):
-                    # ✂️ Tavan Kesme Yüksekliğini Alçalt
                     r = culler.adjust_cut(-0.05)
                     culler.enabled = True
                     hud.set_toast(f"✂️ Tavan Kesme Seviyesi: %{r*100:.0f} ({culler.cut_y:.2f}m)", 1.5)
                 elif event.key in (K_8, K_KP8):
-                    # ✂️ Tavan Kesme Yüksekliğini Yükselt
                     r = culler.adjust_cut(+0.05)
                     culler.enabled = True
                     hud.set_toast(f"✂️ Tavan Kesme Seviyesi: %{r*100:.0f} ({culler.cut_y:.2f}m)", 1.5)
                 elif event.key == K_e:
-                    # 📏 3B Lazer Cetvel Aç/Kapat
                     ruler.toggle()
                     hud.set_toast("📏 Lazer Cetvel: " + ("AKTİF (Ölçmek İçin 2 Noktaya Tıklayın)" if ruler.active else "KAPATILDI"), 3.0)
                 elif event.key == K_v:
-                    # 🎬 60 FPS MP4 Video Kaydı
                     res_msg = recorder.toggle(win_w, win_h, fps=60)
                     hud.set_toast(res_msg, 3.5)
                 elif event.key == K_k:
-                    # 🌐 Web / HTML 3B Model Dışa Aktar
-                    html_file = export_to_standalone_html(xyz, rgb, output_html="3d_scene.html")
+                    html_file = export_to_standalone_html(verts, cols, output_html="3d_scene.html")
                     hud.set_toast(f"🌐 Web 3B Modeli Kaydedildi: {html_file}", 3.5)
                 elif event.key in (K_PLUS, K_KP_PLUS, K_EQUALS):
-                    # 🔍 Zoom Yakınlaş (Büyüt)
                     cam_fov = max(15.0, cam_fov - 4.0)
                     hud.set_toast(f"🔍 Yakınlaşıldı (Zoom In): {cam_fov:.0f}°", 1.5)
                 elif event.key in (K_MINUS, K_KP_MINUS):
-                    # 🔍 Zoom Uzaklaş (Küçült)
                     cam_fov = min(110.0, cam_fov + 4.0)
                     hud.set_toast(f"🔍 Uzaklaşıldı (Zoom Out): {cam_fov:.0f}°", 1.5)
-                elif event.key in (K_x, K_z):
-                    # 🔮 Splat Nokta Boyutunu Büyüt
-                    splat_point_size = min(15.0, splat_point_size + 0.5)
-                    hud.set_toast(f"🔮 Splat Boyutu Büyütüldü: {splat_point_size:.1f}", 1.5)
-                elif event.key == K_c:
-                    # 🔮 Splat Nokta Boyutunu Küçült
-                    splat_point_size = max(1.0, splat_point_size - 0.5)
-                    hud.set_toast(f"🔮 Splat Boyutu Küçültüldü: {splat_point_size:.1f}", 1.5)
                 elif event.key in (K_0, K_KP0):
-                    # 🔍 Zoom Sıfırla (60°)
                     cam_fov = 60.0
                     hud.set_toast("🔍 Zoom Sıfırlandı (60°)", 1.5)
                 elif event.key in (K_y, K_a):
-                    # 🪞 Sağ/Sol Aynalama
                     is_flipped = not is_flipped
-                    xyz[:, 0] = -xyz[:, 0]
-                    glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
-                    glBufferData(GL_ARRAY_BUFFER, xyz.nbytes, xyz, GL_STATIC_DRAW)
+                    verts[:, 0] = -verts[:, 0]
+                    if norms is not None:
+                        norms[:, 0] = -norms[:, 0]
+                    glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
+                    glBufferData(GL_ARRAY_BUFFER, verts.nbytes, verts, GL_STATIC_DRAW)
+                    glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
+                    glBufferData(GL_ARRAY_BUFFER, norms.nbytes, norms, GL_STATIC_DRAW)
                     glBindBuffer(GL_ARRAY_BUFFER, 0)
                     if len(auto_waypoints) > 0:
                         auto_waypoints[:, 0] = -auto_waypoints[:, 0]
@@ -580,42 +538,32 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                         glBufferData(GL_ARRAY_BUFFER, traj_arr.nbytes, traj_arr, GL_STATIC_DRAW)
                         glBindBuffer(GL_ARRAY_BUFFER, 0)
                     drone_x = -drone_x
-                    room_bounds = FloorplanEstimator.calculate_bounds(xyz)
-                    culler.init_from_bounds(xyz)
+                    room_bounds = FloorplanEstimator.calculate_bounds(verts)
+                    culler.init_from_bounds(verts)
                     hud.set_toast(f"🪞 Yön Değiştirildi: {'TERS (DÜZELTİLDİ)' if is_flipped else 'ORİJİNAL'}", 2.5)
                 elif event.key == K_p and len(auto_waypoints) > 0:
-                    # 🎥 Sinematik Otomatik Tur
                     auto_tour = not auto_tour
                     target_yaw, target_pitch = 0.0, 0.0
                     cam_yaw, cam_pitch = 0.0, 0.0
                     hud.set_toast("🎥 Sinematik Tur: " + ("BAŞLATILDI" if auto_tour else "DURDURULDU"), 2.0)
-                elif event.key == K_u:
-                    # ⚠️ Tünel Darboğaz & Tehlike Isı Haritası ([U] Tuşu)
-                    h_active = heatmap_engine.toggle()
-                    if h_active:
-                        hm_cols = heatmap_engine.compute_clearance_heatmap(xyz)
-                        if hm_cols is not None:
-                            hm_rgba = np.column_stack([hm_cols, rgba[:, 3]]).astype(np.float32)
-                            glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-                            glBufferData(GL_ARRAY_BUFFER, hm_rgba.nbytes, hm_rgba, GL_DYNAMIC_DRAW)
-                            glBindBuffer(GL_ARRAY_BUFFER, 0)
-                            hud.set_toast("⚠️ Tünel Tehlike / Açıklık Isı Haritası: AÇIK (Kırmızı = <1.1m)", 3.5)
+                elif event.key == K_m:
+                    if render_mode == "mesh" and vbo_faces is not None:
+                        render_mode = "wireframe"
+                    elif render_mode == "wireframe":
+                        render_mode = "points"
                     else:
-                        glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-                        glBufferData(GL_ARRAY_BUFFER, original_rgba.nbytes, original_rgba, GL_STATIC_DRAW)
-                        glBindBuffer(GL_ARRAY_BUFFER, 0)
-                        hud.set_toast("🌈 Normal Fotogerçekçi Renk Moduna Dönüldü", 2.0)
-                elif event.key == K_j:
-                    # 📄 Otomatik Tünel İnceleme & PDF/HTML Raporu Üret ([J] Tuşu)
-                    rep_path = generate_tunnel_report(input_file="gaussian_scene_cache.npz")
-                    if rep_path and os.path.exists(rep_path):
-                        import webbrowser
-                        webbrowser.open(rep_path)
-                        hud.set_toast(f"📄 Tünel İnceleme Raporu Üretildi & Tarayıcıda Açıldı!", 4.0)
+                        render_mode = "mesh" if vbo_faces is not None else "points"
+                    hud.set_toast(f"🎨 Görünüm Modu: {render_mode.upper()}", 1.5)
+                elif event.key == K_l:
+                    lighting_enabled = not lighting_enabled
+                    if lighting_enabled:
+                        glEnable(GL_LIGHTING)
+                    else:
+                        glDisable(GL_LIGHTING)
+                    hud.set_toast(f"💡 Işıklandırma: {'AÇIK' if lighting_enabled else 'KAPALI'}", 1.5)
                 elif event.key == K_f:
                     show_frustums = not show_frustums
-                    hud.set_toast(f"📐 Kamera Konileri: {'GÖSTERİLİYOR' if show_frustums else 'GİZLENDİ'}", 1.5)
-
+                    hud.set_toast(f"📐 Frustumlar: {'GÖSTERİLİYOR' if show_frustums else 'GİZLENDİ'}", 1.5)
                 elif event.key == K_1 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[0]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
                     hud.set_toast("🚪 Konum 1'e Işınlanıldı (Giriş)", 1.5)
@@ -629,19 +577,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     auto_tour = False; p = auto_waypoints[-1]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
                     hud.set_toast("🚪 Konum 4'e Işınlanıldı (Son Nokta)", 1.5)
                 elif event.key == K_t:
-                    # 🗺️ 90° Kuşbakışı Kat Planı
                     top_down_view = not top_down_view
                     auto_tour = False
                     if top_down_view:
                         culler.enabled = True
                         target_pitch, target_yaw = 89.0, 0.0; cam_pitch, cam_yaw = 89.0, 0.0
-                        drone_x = float(np.mean(xyz[:, 0])); drone_y = float(np.max(xyz[:, 1])) + 14.0; drone_z = float(np.mean(xyz[:, 2]))
+                        drone_x = float(np.mean(verts[:, 0])); drone_y = float(np.max(verts[:, 1])) + 14.0; drone_z = float(np.mean(verts[:, 2]))
                         hud.set_toast("🗺️ Kuşbakışı Kat Planı & Tavan Kesildi (İç Mekan Görünür)", 3.0)
                     else:
                         target_pitch, target_yaw = 0.0, 0.0; cam_pitch, cam_yaw = 0.0, 0.0
                         hud.set_toast("🕹️ Serbest Uçuş Moduna Dönüldü", 1.5)
                 elif event.key == K_r:
-                    # 🔄 Konum ve Kamera Sıfırlama
                     auto_tour = False; tour_progress = 0.0; top_down_view = False
                     culler.enabled = False
                     if len(auto_waypoints) > 0:
@@ -654,7 +600,6 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                 elif event.key in (K_ESCAPE, K_q):
                     running = False
 
-        # Kamera Yumuşak Açı Geçişi (Slerp / Damping)
         cam_yaw = 0.85 * cam_yaw + 0.15 * target_yaw
         cam_pitch = 0.85 * cam_pitch + 0.15 * target_pitch
 
@@ -665,7 +610,6 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         right_x = math.cos(rad_yaw)
         right_z = -math.sin(rad_yaw)
 
-        # Kamera Hareketi (Sinematik Tur veya W/A/S/D Klavye Uçuşu)
         if auto_tour and len(auto_waypoints) > 1:
             tour_progress += dt * (tour_speed * 85.0)
             if tour_progress >= len(auto_waypoints) - 1:
@@ -692,27 +636,27 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             vel_z = 0.78 * vel_z + 0.22 * target_vz
             drone_x += vel_x; drone_y += vel_y; drone_z += vel_z
 
-        # OpenGL Ekranını Temizle
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        # Projeksiyon Matrisi (Perspektif / Zoom FOV)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
         gluPerspective(cam_fov, (win_w / max(win_h, 1)), 0.02, 300.0)
 
-        # ModelView Matrisi (Kamera Dönüş ve Konum Dönüşümleri)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         glRotatef(cam_pitch, 1, 0, 0)
         glRotatef(-cam_yaw, 0, 1, 0)
         glTranslatef(-drone_x, -drone_y, -drone_z)
 
-        # 🏠 Tavan Kesme Düzlemini Donanımsal Olarak Uygula
+        # 🏠 Tavan Kesme Düzlemi Uygula
         culler.apply_gl()
 
-        # Zemin Izgarasını Çiz
+        # Işık Konumu
+        glLightfv(GL_LIGHT0, GL_POSITION, [drone_x + 1.0, drone_y + 3.0, drone_z + 1.0, 1.0])
+
+        # Zemin Izgarası
         glDisable(GL_LIGHTING)
-        glColor4f(0.18, 0.28, 0.42, 0.25)
+        glColor4f(0.18, 0.28, 0.42, 0.35)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_grid)
         glVertexPointer(3, GL_FLOAT, 0, None)
         glEnableClientState(GL_VERTEX_ARRAY)
@@ -720,11 +664,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         glDisableClientState(GL_VERTEX_ARRAY)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-        # Kat Planı Mimari Çerçevesi (Kuşbakışında Çizilir)
+        # Kat Planı Mimari Çerçeve (Kuşbakışında)
         if top_down_view:
             FloorplanEstimator.draw_blueprint_grid(room_bounds)
 
-        # Yeşil Kamera Yörünge Çizgisi
+        # Yeşil Yörünge Çizgisi
         if vbo_traj is not None and traj_n > 0:
             glLineWidth(2.5)
             glColor3f(0.1, 0.95, 0.35)
@@ -735,7 +679,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glDisableClientState(GL_VERTEX_ARRAY)
             glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-        # Kamera Piramitleri (Frustumlar)
+        # Kamera Frustumları
         if show_frustums and len(auto_waypoints) > 0:
             step_kf = max(1, len(auto_waypoints) // 30)
             for kf_pos in auto_waypoints[::step_kf]:
@@ -744,19 +688,37 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # 📏 3B Lazer Cetvel Çizimi
         ruler.draw_3d()
 
-        # 🔮 3D Gaussian Splats Çizimi (VBO Üzerinden 144+ FPS)
-        glPointSize(splat_point_size)
+        # 3B Meş Çizimi
+        if lighting_enabled:
+            glEnable(GL_LIGHTING)
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
         glVertexPointer(3, GL_FLOAT, 0, None)
         glEnableClientState(GL_VERTEX_ARRAY)
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-        glColorPointer(4, GL_FLOAT, 0, None)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_cols)
+        glColorPointer(3, GL_FLOAT, 0, None)
         glEnableClientState(GL_COLOR_ARRAY)
 
-        glDrawArrays(GL_POINTS, 0, num_splats)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
+        glNormalPointer(GL_FLOAT, 0, None)
+        glEnableClientState(GL_NORMAL_ARRAY)
 
+        if render_mode == "mesh" and vbo_faces is not None:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_faces)
+            glDrawElements(GL_TRIANGLES, num_indices, GL_UNSIGNED_INT, None)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+        elif render_mode == "wireframe" and vbo_faces is not None:
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_faces)
+            glDrawElements(GL_TRIANGLES, num_indices, GL_UNSIGNED_INT, None)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+        else:
+            glPointSize(5.0)
+            glDrawArrays(GL_POINTS, 0, len(verts))
+
+        glDisableClientState(GL_NORMAL_ARRAY)
         glDisableClientState(GL_COLOR_ARRAY)
         glDisableClientState(GL_VERTEX_ARRAY)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -765,8 +727,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         culler.restore_gl()
 
         # 2B Yarı Saydam Kontrol Paneli & HUD Çizimi
-        hud.render_gl(win_w, win_h, current_fps, num_splats, cam_fov, is_flipped,
-                      ruler, recorder, room_bounds, top_down_view, culler)
+        hud.render_gl(win_w, win_h, current_fps, len(verts), num_f, cam_fov,
+                      render_mode, is_flipped, ruler, recorder, room_bounds, top_down_view, culler)
 
         # MP4 Video Kare Kaydı
         if recorder.recording:
@@ -774,14 +736,12 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
 
         pygame.display.flip()
 
-    # Çıkışta kayıt devam ediyorsa düzgün kapat
     if recorder.recording:
         recorder.toggle(win_w, win_h)
 
     pygame.quit()
 
 
-# Doğrudan terminalden çalıştırıldığında (Örn: python gaussian_renderer.py)
 if __name__ == "__main__":
-    ply = sys.argv[1] if len(sys.argv) > 1 else "gaussian_scene.ply"
-    view_gaussian_splats(ply)
+    ply = sys.argv[1] if len(sys.argv) > 1 else "mast3r_map.ply"
+    view_mast3r_map(ply)

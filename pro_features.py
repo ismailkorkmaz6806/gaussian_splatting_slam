@@ -389,3 +389,64 @@ def export_to_standalone_html(xyz, rgb, output_html="3d_scene.html", max_points=
         f.write(html_content)
 
     return output_html
+
+
+# ======================================================================================
+# 6. ⚠️ TÜNEL TEHLİKE & DARBOĞAZ ISI HARİTASI (ProximityHeatmapEngine)
+# ======================================================================================
+class ProximityHeatmapEngine:
+    """
+    3B model üzerindeki tünel geçitlerini, tavan yüksekliğini ve duvar yakınlıklarını
+    analiz ederek renkli bir tehlike/darboğaz ısı haritasına (Heatmap) dönüştürür.
+    
+    Renk Kodları:
+      🔴 Kırmızı : < 1.0 metre (Kritik Darboğaz / Çökme / Engel Riski)
+      🟡 Sarı    : 1.0 - 2.0 metre (Dikkat Geçişi)
+      🟢 Yeşil/Mavi : > 2.0 metre (Güvenli & Ferah Alan)
+    """
+
+    def __init__(self):
+        self.active = False            # Isı haritası modu açık mı? ([P] Tuşu)
+        self.heatmap_colors = None     # Hesaplanmış RGB ısı renkleri matrisi
+
+    def toggle(self):
+        """[P] tuşuna basıldığında Isı Haritası modunu açar / kapatır."""
+        self.active = not self.active
+        return self.active
+
+    def compute_clearance_heatmap(self, xyz):
+        """
+        Her 3B noktanın zemin yüksekliği ve duvar merkezinden olan açıklık mesafesini
+        hesaplayıp RGB renklerine dönüştürür.
+        """
+        if xyz is None or len(xyz) == 0:
+            return None
+
+        # Y ekseni zemin seviyesi
+        ground_y = float(np.percentile(xyz[:, 1], 1))
+        clearance_y = np.maximum(0.0, xyz[:, 1] - ground_y)
+
+        # X ekseni merkez kaçıklığı
+        center_x = float(np.median(xyz[:, 0]))
+        dist_x = np.abs(xyz[:, 0] - center_x)
+
+        # Toplam efektif tünel açıklığı (metre)
+        effective_clearance = np.clip(clearance_y * 0.7 + dist_x * 0.8, 0.2, 3.5)
+
+        # Renk Haritası Dönüşümü (0.5m = Kırmızı, 1.5m = Sarı, 2.5m+ = Yeşil/Mavi)
+        norm_val = np.clip((effective_clearance - 0.5) / 2.0, 0.0, 1.0)
+
+        # Jet / Turbo renk gradyanı oluştur
+        r = np.clip(1.5 - np.abs(norm_val * 4.0 - 3.0), 0.0, 1.0)
+        g = np.clip(1.5 - np.abs(norm_val * 4.0 - 2.0), 0.0, 1.0)
+        b = np.clip(1.5 - np.abs(norm_val * 4.0 - 1.0), 0.0, 1.0)
+
+        # Tehlikeli çok dar bölgeleri daha parlak kırmızı yap
+        danger_mask = effective_clearance < 1.10
+        r[danger_mask] = 1.0
+        g[danger_mask] = 0.15
+        b[danger_mask] = 0.20
+
+        self.heatmap_colors = np.column_stack([r, g, b]).astype(np.float32)
+        return self.heatmap_colors
+

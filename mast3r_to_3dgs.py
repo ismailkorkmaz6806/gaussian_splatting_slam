@@ -47,7 +47,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-def build_gaussian_splats_from_mast3r(video_file="testvideo2.mp4",
+def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
                                       output_ply="gaussian_scene.ply",
                                       num_keyframes=50,
                                       target_size=512):
@@ -350,6 +350,6 @@ end_header
 
 # Doğrudan terminalden çalıştırıldığında (Örn: python mast3r_to_3dgs.py testvideo2.mp4 50)
 if __name__ == "__main__":
-    v_name = sys.argv[1] if len(sys.argv) > 1 else "testvideo2.mp4"
+    v_name = sys.argv[1] if len(sys.argv) > 1 else "ofisvideo.mp4"
     n_kf = int(sys.argv[2]) if len(sys.argv) > 2 else 50
     build_gaussian_splats_from_mast3r(v_name, num_keyframes=n_kf)
