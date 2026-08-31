@@ -471,6 +471,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     tour_speed = 1.0
     show_frustums = True        # Kamera piramitleri açık mı?
     top_down_view = False       # Kuşbakışı modu açık mı?
+    user_override_look = False  # Kullanıcı fareyle serbest bakış modunda mı?
 
     clock = pygame.time.Clock()
     mouse_down_left = False
@@ -525,9 +526,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                 dy = event.pos[1] - last_mouse_pos[1]
                 last_mouse_pos = event.pos
                 if mouse_down_left and not ruler.active:
+                    user_override_look = True  # Tur sırasında fareyle serbestçe istenen yöne bakma yetkisi
                     target_yaw += dx * 0.32
                     target_pitch += dy * 0.32
                     target_pitch = max(-89.0, min(89.0, target_pitch))
+
             elif event.type == KEYDOWN:
                 if event.key in (K_h, K_TAB):
                     hud.show_panel = not hud.show_panel
@@ -595,11 +598,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     culler.init_from_bounds(xyz)
                     hud.set_toast(f"🪞 Yön Değiştirildi: {'TERS (DÜZELTİLDİ)' if is_flipped else 'ORİJİNAL'}", 2.5)
                 elif event.key == K_p and len(auto_waypoints) > 0:
-                    # 🎥 Sinematik Otomatik Tur
+                    # 🎥 Sinematik Otomatik Tur (Rayda İlerleme + Serbest Fare Bakışı)
                     auto_tour = not auto_tour
-                    target_yaw, target_pitch = 0.0, 0.0
-                    cam_yaw, cam_pitch = 0.0, 0.0
-                    hud.set_toast("🎥 Sinematik Tur: " + ("BAŞLATILDI" if auto_tour else "DURDURULDU"), 2.0)
+                    user_override_look = False
+                    hud.set_toast("🎥 Kamera Turu: " + ("BAŞLATILDI (Fareyle İstediğin Yöne Bakabilirsin!)" if auto_tour else "DURDURULDU"), 3.0)
+
                 elif event.key == K_u:
                     # ⚠️ Tünel Darboğaz & Tehlike Isı Haritası ([U] Tuşu)
                     h_active = heatmap_engine.toggle()
@@ -694,16 +697,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             t_pos = (1.0 - alpha) * pos0 + alpha * pos1
             drone_x, drone_y, drone_z = float(t_pos[0]), float(t_pos[1]), float(t_pos[2])
 
-            # Odayı videoyu çektiğimiz gibi gezmesi için bakış yönünü rotaya kilitle
-            look_idx = min(idx0 + 50, len(auto_waypoints) - 1)
-            look_pos = auto_waypoints[look_idx]
-            dir_v = look_pos - t_pos
-            if np.linalg.norm(dir_v) > 0.01:
-                t_yaw = math.degrees(math.atan2(dir_v[0], dir_v[2]))
-                t_pitch = math.degrees(math.atan2(-dir_v[1], math.sqrt(dir_v[0]**2 + dir_v[2]**2)))
-                diff_yaw = (t_yaw - target_yaw + 180.0) % 360.0 - 180.0
-                target_yaw += diff_yaw * 0.14
-                target_pitch = 0.86 * target_pitch + 0.14 * t_pitch
+            # Kullanıcı fareyle serbest bakışa geçtiyse yönü kilitleme; dokunmadıysa rotayı takip etsin
+            if not user_override_look:
+                look_idx = min(idx0 + 50, len(auto_waypoints) - 1)
+                look_pos = auto_waypoints[look_idx]
+                dir_v = look_pos - t_pos
+                if np.linalg.norm(dir_v) > 0.01:
+                    t_yaw = math.degrees(math.atan2(dir_v[0], dir_v[2]))
+                    t_pitch = math.degrees(math.atan2(-dir_v[1], math.sqrt(dir_v[0]**2 + dir_v[2]**2)))
+                    diff_yaw = (t_yaw - target_yaw + 180.0) % 360.0 - 180.0
+                    target_yaw += diff_yaw * 0.14
+                    target_pitch = 0.86 * target_pitch + 0.14 * t_pitch
         else:
             keys = pygame.key.get_pressed()
             target_vx, target_vy, target_vz = 0.0, 0.0, 0.0
