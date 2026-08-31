@@ -363,8 +363,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         traj_data = np.load(traj_path, allow_pickle=True)
         auto_waypoints = traj_data["positions"].copy()
 
-    # 🪞 Sağ/Sol Tersliğini Düzelt (Varsayılan olarak aynalama düzeltilir)
-    is_flipped = True
+    # 🪞 Orijinal Çekim Yönü (Aynasız, gerçek kamera açısı)
+    is_flipped = False
     num_splats = len(xyz)
     room_bounds = FloorplanEstimator.calculate_bounds(xyz)
 
@@ -375,7 +375,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     recorder = VideoRecorder()
     heatmap_engine = ProximityHeatmapEngine()
     hud = HUDControllerPro()
-    hud.set_toast("✨ 3DGS Hazır! [G] Tavanı Gizle, [T] Kuşbakışı, [U] Isı Haritası, [J] Rapor", 4.0)
+    hud.set_toast("✨ 3DGS Hazır! [P] Kamera Turu, [G] Tavanı Gizle, [T] Kuşbakışı, [U] Isı Haritası", 4.5)
 
     # RGBA Renk Matrisini Hazırla (Renk + Opaklık)
     if opacity is not None:
@@ -442,11 +442,22 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
 
     glClearColor(0.04, 0.05, 0.08, 1.0)
 
-    # Başlangıç Kamera Konumu
-    if len(auto_waypoints) > 0:
+    # Başlangıç Kamera Konumu ve Çekim Yönü
+    if len(auto_waypoints) > 1:
         drone_x, drone_y, drone_z = float(auto_waypoints[0][0]), float(auto_waypoints[0][1]), float(auto_waypoints[0][2])
+        dir0 = auto_waypoints[min(60, len(auto_waypoints)-1)] - auto_waypoints[0]
+        if np.linalg.norm(dir0) > 1e-3:
+            target_yaw = math.degrees(math.atan2(dir0[0], dir0[2]))
+            target_pitch = math.degrees(math.atan2(-dir0[1], math.sqrt(dir0[0]**2 + dir0[2]**2)))
+            cam_yaw, cam_pitch = target_yaw, target_pitch
+        else:
+            cam_yaw, cam_pitch = 0.0, 0.0
+            target_yaw, target_pitch = 0.0, 0.0
     else:
         drone_x, drone_y, drone_z = 0.0, 1.5, 0.0
+        cam_yaw, cam_pitch = 0.0, 0.0
+        target_yaw, target_pitch = 0.0, 0.0
+
 
     cam_yaw, cam_pitch = 0.0, 0.0
     target_yaw, target_pitch = 0.0, 0.0
@@ -641,16 +652,22 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                         target_pitch, target_yaw = 0.0, 0.0; cam_pitch, cam_yaw = 0.0, 0.0
                         hud.set_toast("🕹️ Serbest Uçuş Moduna Dönüldü", 1.5)
                 elif event.key == K_r:
-                    # 🔄 Konum ve Kamera Sıfırlama
+                    # 🔄 Konum ve Kamera Sıfırlama (Başlangıç rotasına dön)
                     auto_tour = False; tour_progress = 0.0; top_down_view = False
                     culler.enabled = False
-                    if len(auto_waypoints) > 0:
+                    if len(auto_waypoints) > 1:
                         drone_x, drone_y, drone_z = float(auto_waypoints[0][0]), float(auto_waypoints[0][1]), float(auto_waypoints[0][2])
+                        dir0 = auto_waypoints[min(60, len(auto_waypoints)-1)] - auto_waypoints[0]
+                        if np.linalg.norm(dir0) > 1e-3:
+                            target_yaw = math.degrees(math.atan2(dir0[0], dir0[2]))
+                            target_pitch = math.degrees(math.atan2(-dir0[1], math.sqrt(dir0[0]**2 + dir0[2]**2)))
+                            cam_yaw, cam_pitch = target_yaw, target_pitch
                     else:
                         drone_x, drone_y, drone_z = 0.0, 1.5, 0.0
-                    target_yaw, target_pitch = 0.0, 0.0; cam_yaw, cam_pitch = 0.0, 0.0; vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
+                        target_yaw, target_pitch = 0.0, 0.0; cam_yaw, cam_pitch = 0.0, 0.0
+                    vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
                     cam_fov = 60.0
-                    hud.set_toast("🔄 Konum ve Kamera Sıfırlandı", 1.5)
+                    hud.set_toast("🔄 Kamera Başlangıç Rotasına Sıfırlandı", 2.0)
                 elif event.key in (K_ESCAPE, K_q):
                     running = False
 
@@ -667,7 +684,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
 
         # Kamera Hareketi (Sinematik Tur veya W/A/S/D Klavye Uçuşu)
         if auto_tour and len(auto_waypoints) > 1:
-            tour_progress += dt * (tour_speed * 85.0)
+            tour_progress += dt * (tour_speed * 110.0)
             if tour_progress >= len(auto_waypoints) - 1:
                 tour_progress = 0.0
             idx0 = int(tour_progress)
@@ -676,6 +693,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             pos0, pos1 = auto_waypoints[idx0], auto_waypoints[idx1]
             t_pos = (1.0 - alpha) * pos0 + alpha * pos1
             drone_x, drone_y, drone_z = float(t_pos[0]), float(t_pos[1]), float(t_pos[2])
+
+            # Odayı videoyu çektiğimiz gibi gezmesi için bakış yönünü rotaya kilitle
+            look_idx = min(idx0 + 50, len(auto_waypoints) - 1)
+            look_pos = auto_waypoints[look_idx]
+            dir_v = look_pos - t_pos
+            if np.linalg.norm(dir_v) > 0.01:
+                t_yaw = math.degrees(math.atan2(dir_v[0], dir_v[2]))
+                t_pitch = math.degrees(math.atan2(-dir_v[1], math.sqrt(dir_v[0]**2 + dir_v[2]**2)))
+                diff_yaw = (t_yaw - target_yaw + 180.0) % 360.0 - 180.0
+                target_yaw += diff_yaw * 0.14
+                target_pitch = 0.86 * target_pitch + 0.14 * t_pitch
         else:
             keys = pygame.key.get_pressed()
             target_vx, target_vy, target_vz = 0.0, 0.0, 0.0
