@@ -37,9 +37,10 @@ from OpenGL.GLU import *
 from pro_features import (
     CeilingCuller, LaserRuler, VideoRecorder,
     FloorplanEstimator, export_to_standalone_html,
-    ProximityHeatmapEngine
+    ProximityHeatmapEngine, OctomapEngine
 )
 from tunnel_report_generator import generate_tunnel_report
+
 
 
 
@@ -226,6 +227,7 @@ class HUDControllerPro:
                 ("[T] Tuşu", "🗺️ 90° Kuşbakışı Kat Planı ve m² Alan Hesabı"),
                 ("[E] Tuşu", "📏 3B Lazer Cetvel (İki Nokta Arası Metre Ölçümü)"),
                 ("[U] Tuşu", "⚠️ Tünel Darboğaz & Tehlike Isı Haritası (<1.1m)"),
+                ("[O] Tuşu", "🧊 OctoMap 3B Voksel / Doluluk Izgara Modu"),
                 ("[J] Tuşu", "📄 Tünel İnceleme & PDF/HTML Raporu Üret"),
                 ("", ""),
                 ("🚀 PRO ÇIKTI VE VİDEO", ""),
@@ -374,8 +376,13 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     ruler = LaserRuler()
     recorder = VideoRecorder()
     heatmap_engine = ProximityHeatmapEngine()
+    octomap_engine = OctomapEngine(voxel_size=0.15)
+    vbo_octo_xyz = None
+    vbo_octo_rgba = None
+    octo_line_count = 0
     hud = HUDControllerPro()
-    hud.set_toast("✨ 3DGS Hazır! [P] Kamera Turu, [G] Tavanı Gizle, [T] Kuşbakışı, [U] Isı Haritası", 4.5)
+    hud.set_toast("✨ 3DGS Hazır! [P] Kamera Turu, [G] Tavanı Gizle, [U] Isı Haritası, [O] OctoMap", 4.5)
+
 
     # RGBA Renk Matrisini Hazırla (Renk + Opaklık)
     if opacity is not None:
@@ -619,6 +626,26 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                         glBufferData(GL_ARRAY_BUFFER, original_rgba.nbytes, original_rgba, GL_STATIC_DRAW)
                         glBindBuffer(GL_ARRAY_BUFFER, 0)
                         hud.set_toast("🌈 Normal Fotogerçekçi Renk Moduna Dönüldü", 2.0)
+                elif event.key == K_o:
+                    # 🧊 OctoMap (3B Voksel / Doluluk Izgara Modu - [O] Tuşu)
+                    o_active = octomap_engine.toggle()
+                    if o_active:
+                        if vbo_octo_xyz is None:
+                            hud.set_toast("⏳ OctoMap Voksel Izgarası Hesaplanıyor...", 1.5)
+                            c_verts, c_cols = octomap_engine.generate_octomap(xyz, voxel_size=0.15)
+                            if c_verts is not None:
+                                octo_line_count = len(c_verts)
+                                vbo_octo_xyz = glGenBuffers(1)
+                                glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_xyz)
+                                glBufferData(GL_ARRAY_BUFFER, c_verts.nbytes, c_verts, GL_STATIC_DRAW)
+
+                                vbo_octo_rgba = glGenBuffers(1)
+                                glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_rgba)
+                                glBufferData(GL_ARRAY_BUFFER, c_cols.nbytes, c_cols, GL_STATIC_DRAW)
+                                glBindBuffer(GL_ARRAY_BUFFER, 0)
+                        hud.set_toast(f"🧊 OctoMap 3B Voksel Modu: AÇIK ({octomap_engine.num_cubes:,} Küp)", 3.5)
+                    else:
+                        hud.set_toast("🔮 3DGS Fotogerçekçi Renk Moduna Dönüldü", 2.0)
                 elif event.key == K_j:
                     # 📄 Otomatik Tünel İnceleme & PDF/HTML Raporu Üret ([J] Tuşu)
                     rep_path = generate_tunnel_report(input_file="gaussian_scene_cache.npz")
@@ -626,6 +653,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                         import webbrowser
                         webbrowser.open(rep_path)
                         hud.set_toast(f"📄 Tünel İnceleme Raporu Üretildi & Tarayıcıda Açıldı!", 4.0)
+
                 elif event.key == K_f:
                     show_frustums = not show_frustums
                     hud.set_toast(f"📐 Kamera Konileri: {'GÖSTERİLİYOR' if show_frustums else 'GİZLENDİ'}", 1.5)
@@ -776,22 +804,40 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # 📏 3B Lazer Cetvel Çizimi
         ruler.draw_3d()
 
-        # 🔮 3D Gaussian Splats Çizimi (VBO Üzerinden 144+ FPS)
-        glPointSize(splat_point_size)
+        # 🧊 OctoMap 3B Voksel Render / 🔮 3DGS Nokta Render
+        if octomap_engine.active and vbo_octo_xyz is not None and octo_line_count > 0:
+            glLineWidth(1.6)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_xyz)
+            glVertexPointer(3, GL_FLOAT, 0, None)
+            glEnableClientState(GL_VERTEX_ARRAY)
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
-        glVertexPointer(3, GL_FLOAT, 0, None)
-        glEnableClientState(GL_VERTEX_ARRAY)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_rgba)
+            glColorPointer(4, GL_FLOAT, 0, None)
+            glEnableClientState(GL_COLOR_ARRAY)
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-        glColorPointer(4, GL_FLOAT, 0, None)
-        glEnableClientState(GL_COLOR_ARRAY)
+            glDrawArrays(GL_LINES, 0, octo_line_count)
 
-        glDrawArrays(GL_POINTS, 0, num_splats)
+            glDisableClientState(GL_COLOR_ARRAY)
+            glDisableClientState(GL_VERTEX_ARRAY)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+        else:
+            # 🔮 Standart 3D Gaussian Splats Çizimi (VBO Üzerinden 144+ FPS)
+            glPointSize(splat_point_size)
 
-        glDisableClientState(GL_COLOR_ARRAY)
-        glDisableClientState(GL_VERTEX_ARRAY)
-        glBindBuffer(GL_ARRAY_BUFFER, 0)
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
+            glVertexPointer(3, GL_FLOAT, 0, None)
+            glEnableClientState(GL_VERTEX_ARRAY)
+
+            glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
+            glColorPointer(4, GL_FLOAT, 0, None)
+            glEnableClientState(GL_COLOR_ARRAY)
+
+            glDrawArrays(GL_POINTS, 0, num_splats)
+
+            glDisableClientState(GL_COLOR_ARRAY)
+            glDisableClientState(GL_VERTEX_ARRAY)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
 
         # Tavan Kesme Düzlemini Kaldır (2B Arayüz için)
         culler.restore_gl()

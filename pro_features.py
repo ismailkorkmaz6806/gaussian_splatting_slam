@@ -450,3 +450,81 @@ class ProximityHeatmapEngine:
         self.heatmap_colors = np.column_stack([r, g, b]).astype(np.float32)
         return self.heatmap_colors
 
+
+# ======================================================================================
+# 7. 🧊 3B VOKSEL DOLULUK HARİTASI (OctomapEngine - ROS Standardı)
+# ======================================================================================
+class OctomapEngine:
+    """
+    3B nokta bulutunu robotik ve otonom navigasyon standartlarındaki
+    OctoMap (3B Voksel / Doluluk Izgarası) formatına dönüştürür.
+    
+    Özellikler:
+      - Sürekli uzayı 10cm/15cm/20cm'lik 3B doluluk küplerine böler.
+      - ROS OctoMap standart renk skalası (Zemin -> Tavan yükseklik gradyanı).
+      - Tel kafes ve yarı saydam 3B küp render geometrisi üretir.
+    """
+
+    def __init__(self, voxel_size=0.15):
+        self.active = False
+        self.voxel_size = voxel_size     # Voksel küp kenar uzunluğu (metre)
+        self.voxel_centers = None        # Küp merkezleri (N, 3)
+        self.cube_vertices = None        # OpenGL için küp köşe dizisi
+        self.cube_colors = None          # Voksel renkleri
+        self.num_cubes = 0
+
+    def toggle(self):
+        """[O] tuşuna basıldığında OctoMap modunu açar / kapatır."""
+        self.active = not self.active
+        return self.active
+
+    def generate_octomap(self, xyz, voxel_size=None):
+        """
+        Nokta bulutunu voksellere böler ve 3B küp tel kafes geometrisini hazırlar.
+        """
+        if voxel_size is not None:
+            self.voxel_size = voxel_size
+        if xyz is None or len(xyz) == 0:
+            return None, None
+
+        # Vokselleştirme (Downsampling & Grid Binning)
+        grid_coords = np.floor(xyz / self.voxel_size).astype(np.int32)
+        unique_grid = np.unique(grid_coords, axis=0)
+        self.voxel_centers = (unique_grid.astype(np.float32) + 0.5) * self.voxel_size
+        self.num_cubes = len(self.voxel_centers)
+
+        # Yüksekliğe göre ROS OctoMap renk paleti (Mavi -> Yeşil -> Sarı -> Kırmızı)
+        min_y = float(np.min(self.voxel_centers[:, 1]))
+        max_y = float(np.max(self.voxel_centers[:, 1]))
+        y_range = max(0.1, max_y - min_y)
+        norm_y = np.clip((self.voxel_centers[:, 1] - min_y) / y_range, 0.0, 1.0)
+
+        # Turbo / Jet renk skalası
+        r = np.clip(1.5 - np.abs(norm_y * 4.0 - 3.0), 0.0, 1.0)
+        g = np.clip(1.5 - np.abs(norm_y * 4.0 - 2.0), 0.0, 1.0)
+        b = np.clip(1.5 - np.abs(norm_y * 4.0 - 1.0), 0.0, 1.0)
+        a = np.full(self.num_cubes, 0.85, dtype=np.float32)
+
+        # 3B Küp Tel Kafes Çizgileri (12 kenar x 2 nokta = 24 köşe per küp)
+        s = (self.voxel_size * 0.96) / 2.0
+        offsets = np.array([
+            [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s],
+            [-s, -s,  s], [s, -s,  s], [s, s,  s], [-s, s,  s]
+        ], dtype=np.float32)
+
+        lines_idx = [
+            0,1, 1,2, 2,3, 3,0,  # Alt taban
+            4,5, 5,6, 6,7, 7,4,  # Üst tavan
+            0,4, 1,5, 2,6, 3,7   # Dikey sütunlar
+        ]
+
+        # Vektörize Çizgi Dizisi Oluştur
+        cube_lines = (self.voxel_centers[:, None, :] + offsets[lines_idx]).reshape(-1, 3).astype(np.float32)
+        colors_per_cube = np.column_stack([r, g, b, a]).astype(np.float32)
+        cube_line_colors = np.repeat(colors_per_cube, 24, axis=0)
+
+        self.cube_vertices = cube_lines
+        self.cube_colors = cube_line_colors
+        return self.cube_vertices, self.cube_colors
+
+
