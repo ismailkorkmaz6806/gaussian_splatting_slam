@@ -480,7 +480,8 @@ class OctomapEngine:
 
     def generate_octomap(self, xyz, voxel_size=None):
         """
-        Nokta bulutunu voksellere böler ve 3B küp tel kafes geometrisini hazırlar.
+        Nokta bulutunu voksellere böler ve içi dolu (Solid 3D Cubes) 6 yüzeyli
+        3B küp geometrisini (GL_TRIANGLES) ve ışıklandırma gölgelerini hazırlar.
         """
         if voxel_size is not None:
             self.voxel_size = voxel_size
@@ -503,28 +504,51 @@ class OctomapEngine:
         r = np.clip(1.5 - np.abs(norm_y * 4.0 - 3.0), 0.0, 1.0)
         g = np.clip(1.5 - np.abs(norm_y * 4.0 - 2.0), 0.0, 1.0)
         b = np.clip(1.5 - np.abs(norm_y * 4.0 - 1.0), 0.0, 1.0)
-        a = np.full(self.num_cubes, 0.85, dtype=np.float32)
 
-        # 3B Küp Tel Kafes Çizgileri (12 kenar x 2 nokta = 24 köşe per küp)
-        s = (self.voxel_size * 0.96) / 2.0
+        # 8 Küp Köşesi (Hafif aralıklı temiz küpler: %94 boyut)
+        s = (self.voxel_size * 0.94) / 2.0
         offsets = np.array([
-            [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s],
-            [-s, -s,  s], [s, -s,  s], [s, s,  s], [-s, s,  s]
+            [-s, -s, -s],  # 0: sol-alt-arka
+            [ s, -s, -s],  # 1: sag-alt-arka
+            [ s,  s, -s],  # 2: sag-ust-arka
+            [-s,  s, -s],  # 3: sol-ust-arka
+            [-s, -s,  s],  # 4: sol-alt-on
+            [ s, -s,  s],  # 5: sag-alt-on
+            [ s,  s,  s],  # 6: sag-ust-on
+            [-s,  s,  s]   # 7: sol-ust-on
         ], dtype=np.float32)
 
-        lines_idx = [
-            0,1, 1,2, 2,3, 3,0,  # Alt taban
-            4,5, 5,6, 6,7, 7,4,  # Üst tavan
-            0,4, 1,5, 2,6, 3,7   # Dikey sütunlar
+        # 6 Dolu Yüzey (12 Üçgen = 36 Köşe per küp)
+        tri_idx = [
+            4, 5, 6,  4, 6, 7,  # Ön Yüz (+Z)
+            1, 0, 3,  1, 3, 2,  # Arka Yüz (-Z)
+            0, 4, 7,  0, 7, 3,  # Sol Yüz (-X)
+            5, 1, 2,  5, 2, 6,  # Sağ Yüz (+X)
+            3, 7, 6,  3, 6, 2,  # Üst Yüz (+Y - Parlak Tavan)
+            0, 1, 5,  0, 5, 4   # Alt Yüz (-Y - Taban)
         ]
 
-        # Vektörize Çizgi Dizisi Oluştur
-        cube_lines = (self.voxel_centers[:, None, :] + offsets[lines_idx]).reshape(-1, 3).astype(np.float32)
-        colors_per_cube = np.column_stack([r, g, b, a]).astype(np.float32)
-        cube_line_colors = np.repeat(colors_per_cube, 24, axis=0)
+        # 3B Hacim Hissi Veren Yüzey Gölgelendirme Çarpanları
+        face_shades = np.array([
+            0.90, 0.90, 0.90, 0.90, 0.90, 0.90,  # Ön
+            0.75, 0.75, 0.75, 0.75, 0.75, 0.75,  # Arka
+            0.82, 0.82, 0.82, 0.82, 0.82, 0.82,  # Sol
+            0.86, 0.86, 0.86, 0.86, 0.86, 0.86,  # Sağ
+            1.00, 1.00, 1.00, 1.00, 1.00, 1.00,  # Üst (En Parlak)
+            0.55, 0.55, 0.55, 0.55, 0.55, 0.55   # Alt (Gölge)
+        ], dtype=np.float32)
 
-        self.cube_vertices = cube_lines
-        self.cube_colors = cube_line_colors
+        # (N, 36, 3) 3B Dolu Küp Köşe Dizisi
+        cube_verts = (self.voxel_centers[:, None, :] + offsets[tri_idx]).reshape(-1, 3).astype(np.float32)
+
+        # Renk ve Gölgeleri Her Küpün 36 Köşesine Uygula
+        base_rgb = np.column_stack([r, g, b]).astype(np.float32)  # (N, 3)
+        shaded_rgb = (base_rgb[:, None, :] * face_shades[None, :, None]).reshape(-1, 3)  # (N*36, 3)
+        cube_rgba = np.column_stack([shaded_rgb, np.full(len(shaded_rgb), 1.0, dtype=np.float32)]).astype(np.float32)
+
+        self.cube_vertices = cube_verts
+        self.cube_colors = cube_rgba
         return self.cube_vertices, self.cube_colors
+
 
 

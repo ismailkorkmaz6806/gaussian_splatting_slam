@@ -804,9 +804,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # 📏 3B Lazer Cetvel Çizimi
         ruler.draw_3d()
 
-        # 🧊 OctoMap 3B Voksel Render / 🔮 3DGS Nokta Render
+        # 🧊 OctoMap İçi Dolu 3B Voksel Küpleri (Solid 3D Cubes) / 🔮 3DGS Nokta Render
         if octomap_engine.active and vbo_octo_xyz is not None and octo_line_count > 0:
-            glLineWidth(1.6)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_xyz)
             glVertexPointer(3, GL_FLOAT, 0, None)
             glEnableClientState(GL_VERTEX_ARRAY)
@@ -815,7 +814,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glColorPointer(4, GL_FLOAT, 0, None)
             glEnableClientState(GL_COLOR_ARRAY)
 
-            glDrawArrays(GL_LINES, 0, octo_line_count)
+            glDrawArrays(GL_TRIANGLES, 0, octo_line_count)
 
             glDisableClientState(GL_COLOR_ARRAY)
             glDisableClientState(GL_VERTEX_ARRAY)
