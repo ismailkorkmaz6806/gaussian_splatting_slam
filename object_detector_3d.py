@@ -110,6 +110,9 @@ def extract_3d_objects(frames, keyframe_pts3d, cam_poses, keyframe_confs, conf_t
                 continue
 
             score = float(box.conf[0])
+            #.cpu(): Bu koordinatlar PyTorch tensörü olarak GPU belleğindeyse (CUDA), 
+            #veriyi işlemcinin (CPU) erişebileceği ana belleğe taşır.
+            #astype() virgüllü değer üretmeyi sağlar
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
 
             # Görüntü sınırlarına kırpma
