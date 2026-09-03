@@ -551,4 +551,145 @@ class OctomapEngine:
         return self.cube_vertices, self.cube_colors
 
 
+# ======================================================================================
+# 🚁 3B FOTOGERÇEKÇİ QUADCOPTER DRON MODELİ VE UÇUŞ MOTORU
+# ======================================================================================
+class Drone3DModel:
+    """
+    3B Fotogerçekçi Quadcopter Dron Görsel Modeli, Fener Işığı ve Lazer Çizicisi.
+    
+    Özellikler:
+      - 4 Karbon Fiber Motor Kolu, Gövde ve İniş Ayakları
+      - Dönen Pervaneler (Canlı Animasyonlu)
+      - Ön Fener Işığı (Karanlık tüneli aydınlatan 3B şeffaf ışık konisi)
+      - TFmini Zemine İnen Lazer Noktası
+      - 3 Kamera Modu: 3. Şahıs Takip, 1. Şahıs FPV, Serbest Gezgin
+    """
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
+        self.yaw = 0.0        # Derece
+        self.pitch = 0.0      # Derece
+        self.roll = 0.0       # Derece
+        self.prop_angle = 0.0
+        self.scale = 0.28     # Dron boyutu (metre cinsinden gerçekçi ölçek)
+        self.view_mode = 0    # 0: 3. Şahıs Takip, 1: 1. Şahıs FPV, 2: Serbest
+        self.spotlight = True
+        self.laser = True
+        self.active = True
+
+    def update(self, dt=0.016):
+        """Pervanelerin dönme animasyonunu günceller."""
+        self.prop_angle = (self.prop_angle + 1600.0 * dt) % 360.0
+
+    def draw_3d(self, floor_y=-1.5):
+        """OpenGL ile 3B Dron gövdesi, pervaneleri, feneri ve lazerini çizer."""
+        if not self.active:
+            return
+
+        glPushMatrix()
+        # Dron Konum ve Dönüş Matrisi
+        glTranslatef(self.x, self.y, self.z)
+        glRotatef(-self.yaw, 0, 1, 0)
+        glRotatef(self.pitch, 1, 0, 0)
+        glRotatef(self.roll, 0, 0, 1)
+        glScalef(self.scale, self.scale, self.scale)
+
+        # 1. Dron Ana Gövdesi (Koyu Titanyum Gri)
+        glColor3f(0.18, 0.20, 0.24)
+        glBegin(GL_QUADS)
+        # Üst Yüz
+        glVertex3f(-0.35, 0.08, -0.35); glVertex3f(0.35, 0.08, -0.35)
+        glVertex3f(0.35, 0.08, 0.35);   glVertex3f(-0.35, 0.08, 0.35)
+        # Alt Yüz
+        glVertex3f(-0.35, -0.08, -0.35); glVertex3f(0.35, -0.08, -0.35)
+        glVertex3f(0.35, -0.08, 0.35);   glVertex3f(-0.35, -0.08, 0.35)
+        # Yanlar
+        glVertex3f(-0.35, -0.08, 0.35); glVertex3f(0.35, -0.08, 0.35)
+        glVertex3f(0.35, 0.08, 0.35);   glVertex3f(-0.35, 0.08, 0.35)
+        glVertex3f(-0.35, -0.08, -0.35); glVertex3f(0.35, -0.08, -0.35)
+        glVertex3f(0.35, 0.08, -0.35);   glVertex3f(-0.35, 0.08, -0.35)
+        glEnd()
+
+        # 2. Karbon Fiber 4 Motor Kolu (X Tipi Çapraz Kollar)
+        glLineWidth(4.0)
+        glColor3f(0.10, 0.12, 0.15)
+        glBegin(GL_LINES)
+        glVertex3f(-0.9, 0.04, -0.9); glVertex3f(0.9, 0.04, 0.9)
+        glVertex3f(-0.9, 0.04, 0.9);  glVertex3f(0.9, 0.04, -0.9)
+        glEnd()
+
+        # 3. 4 Adet Motor ve Dönen Pervaneler
+        motor_pos = [
+            ( 0.9, 0.08,  0.9, (1.0, 0.2, 0.2)), # Ön Sağ (Kırmızı)
+            (-0.9, 0.08,  0.9, (1.0, 0.2, 0.2)), # Ön Sol (Kırmızı)
+            ( 0.9, 0.08, -0.9, (0.2, 0.4, 0.9)), # Arka Sağ (Mavi)
+            (-0.9, 0.08, -0.9, (0.2, 0.4, 0.9))  # Arka Sol (Mavi)
+        ]
+
+        for mx, my, mz, p_col in motor_pos:
+            # Motor Yuvası
+            glColor3f(0.12, 0.12, 0.15)
+            glBegin(GL_LINES)
+            glVertex3f(mx, my-0.08, mz); glVertex3f(mx, my+0.05, mz)
+            glEnd()
+
+            # Dönen Pervane Çizgisi
+            glPushMatrix()
+            glTranslatef(mx, my+0.05, mz)
+            glRotatef(self.prop_angle if mx*mz > 0 else -self.prop_angle, 0, 1, 0)
+            glLineWidth(3.0)
+            glColor3f(*p_col)
+            glBegin(GL_LINES)
+            glVertex3f(-0.45, 0, 0); glVertex3f(0.45, 0, 0)
+            glVertex3f(0, 0, -0.45); glVertex3f(0, 0, 0.45)
+            glEnd()
+            glPopMatrix()
+
+        # 4. 💡 Dronun Ön Feneri (Spotlight - İleriye Bakan Işık Konisi)
+        if self.spotlight:
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            # Fenerin parlak gözü
+            glColor4f(1.0, 1.0, 0.85, 0.95)
+            glPointSize(10.0)
+            glBegin(GL_POINTS)
+            glVertex3f(0.0, 0.0, 0.38)
+            glEnd()
+
+            # Işık Huzmesi Konisi (Yarı Saydam)
+            glColor4f(0.85, 0.95, 1.0, 0.12)
+            glBegin(GL_TRIANGLE_FAN)
+            glVertex3f(0.0, 0.0, 0.38) # Işık Kaynağı
+            for deg in range(0, 361, 30):
+                rad = math.radians(deg)
+                cx = math.sin(rad) * 1.8
+                cy = math.cos(rad) * 1.8
+                glVertex3f(cx, cy, 7.5) # 7.5 metre ileriye açılan ışık
+            glEnd()
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        # 5. 📏 TFmini Lazer İrtifa Çizgisi (Zemine İnen Kırmızı Lazer)
+        if self.laser:
+            # Dronun dünya koordinatındaki yüksekliğine göre zemine lazer uzat
+            drone_world_y = self.y
+            dist_to_ground = max(0.1, (drone_world_y - floor_y) / self.scale)
+
+            glLineWidth(2.0)
+            glColor4f(1.0, 0.15, 0.15, 0.85)
+            glBegin(GL_LINES)
+            glVertex3f(0.0, -0.05, 0.0)
+            glVertex3f(0.0, -dist_to_ground, 0.0)
+            glEnd()
+
+            # Zemindeki Kırmızı Lazer Noktası
+            glPointSize(7.0)
+            glBegin(GL_POINTS)
+            glVertex3f(0.0, -dist_to_ground, 0.0)
+            glEnd()
+
+        glPopMatrix()
+
+
 

@@ -37,9 +37,10 @@ from OpenGL.GLU import *
 from pro_features import (
     CeilingCuller, LaserRuler, VideoRecorder,
     FloorplanEstimator, export_to_standalone_html,
-    ProximityHeatmapEngine, OctomapEngine
+    ProximityHeatmapEngine, OctomapEngine, Drone3DModel
 )
 from tunnel_report_generator import generate_tunnel_report
+
 
 
 
@@ -381,7 +382,9 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     vbo_octo_rgba = None
     octo_line_count = 0
     hud = HUDControllerPro()
-    hud.set_toast("✨ 3DGS Hazır! [P] Kamera Turu, [G] Tavanı Gizle, [U] Isı Haritası, [O] OctoMap", 4.5)
+    drone_model = Drone3DModel()
+    drone_view_mode = 0  # 0: 3. Şahıs Dron Takip, 1: 1. Şahıs FPV, 2: Serbest
+    hud.set_toast("✨ 3B Dron Simülatörü Hazır! [W/A/S/D] Uç, [F] Kamera Modu, [P] Otonom Tur, [O] OctoMap", 5.0)
 
 
     # RGBA Renk Matrisini Hazırla (Renk + Opaklık)
@@ -655,8 +658,20 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                         hud.set_toast(f"📄 Tünel İnceleme Raporu Üretildi & Tarayıcıda Açıldı!", 4.0)
 
                 elif event.key == K_f:
-                    show_frustums = not show_frustums
-                    hud.set_toast(f"📐 Kamera Konileri: {'GÖSTERİLİYOR' if show_frustums else 'GİZLENDİ'}", 1.5)
+                    # 🚁 Dron Kamera Modu (0: 3. Şahıs Takip, 1: 1. Şahıs FPV, 2: Serbest)
+                    drone_view_mode = (drone_view_mode + 1) % 3
+                    if drone_view_mode == 0:
+                        hud.set_toast("🚁 Kamera: 3. Şahıs Dron Takip Modu (Chase Cam)", 2.5)
+                    elif drone_view_mode == 1:
+                        hud.set_toast("📷 Kamera: 1. Şahıs Dron Kokpit Modu (FPV)", 2.5)
+                    else:
+                        hud.set_toast("🌐 Kamera: Serbest Gezgin Modu (Free Orbit)", 2.5)
+
+                elif event.key == K_l:
+                    # 💡 Dron Feneri ve Lazer Aç / Kapa
+                    drone_model.spotlight = not drone_model.spotlight
+                    drone_model.laser = drone_model.spotlight
+                    hud.set_toast(f"💡 Dron Feneri & Lazer: {'AÇIK' if drone_model.spotlight else 'KAPALI'}", 2.0)
 
                 elif event.key == K_1 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[0]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
@@ -752,6 +767,26 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             vel_z = 0.78 * vel_z + 0.22 * target_vz
             drone_x += vel_x; drone_y += vel_y; drone_z += vel_z
 
+        # 🚁 Dron Modelinin Konum ve Yönünü Güncelle
+        drone_model.x, drone_model.y, drone_model.z = drone_x, drone_y, drone_z
+        drone_model.yaw = cam_yaw
+        drone_model.pitch = cam_pitch
+        drone_model.update(dt)
+
+        # 🎥 Kamera Görünüm Moduna Göre Kamera Konumunu Ayarla
+        if drone_view_mode == 0:
+            # 3. Şahıs Takip Kamerası (Dronun Arkasından)
+            cam_dist = 1.40
+            cam_h = 0.42
+            render_cam_x = drone_x - fwd_x * cam_dist
+            render_cam_y = drone_y + cam_h - fwd_y * cam_dist
+            render_cam_z = drone_z - fwd_z * cam_dist
+        else:
+            # 1. Şahıs Kokpit (FPV) veya Serbest
+            render_cam_x = drone_x
+            render_cam_y = drone_y
+            render_cam_z = drone_z
+
         # OpenGL Ekranını Temizle
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -765,7 +800,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         glLoadIdentity()
         glRotatef(cam_pitch, 1, 0, 0)
         glRotatef(-cam_yaw, 0, 1, 0)
-        glTranslatef(-drone_x, -drone_y, -drone_z)
+        glTranslatef(-render_cam_x, -render_cam_y, -render_cam_z)
 
         # 🏠 Tavan Kesme Düzlemini Donanımsal Olarak Uygula
         culler.apply_gl()
@@ -784,10 +819,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         if top_down_view:
             FloorplanEstimator.draw_blueprint_grid(room_bounds)
 
+        # 🚁 3B Fotogerçekçi Dron Modeli Çizimi (Pervaneler, Gövde, Fener & Lazer)
+        if drone_view_mode != 1:  # FPV modunda kokpitteyken gövde kamerayı kapatmasın
+            drone_model.draw_3d(floor_y=room_bounds['min_y'])
+        elif drone_model.spotlight:
+            # FPV modundayken de fenerin ve lazerin ışığı sahneye vursun
+            drone_model.draw_3d(floor_y=room_bounds['min_y'])
+
         # Yeşil Kamera Yörünge Çizgisi
         if vbo_traj is not None and traj_n > 0:
-            glLineWidth(2.5)
-            glColor3f(0.1, 0.95, 0.35)
+            glLineWidth(2.0)
+            glColor4f(0.1, 0.95, 0.35, 0.6)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_traj)
             glVertexPointer(3, GL_FLOAT, 0, None)
             glEnableClientState(GL_VERTEX_ARRAY)
@@ -795,14 +837,9 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glDisableClientState(GL_VERTEX_ARRAY)
             glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-        # Kamera Piramitleri (Frustumlar)
-        if show_frustums and len(auto_waypoints) > 0:
-            step_kf = max(1, len(auto_waypoints) // 30)
-            for kf_pos in auto_waypoints[::step_kf]:
-                draw_frustum(kf_pos, size=0.10, color=(1.0, 0.25, 0.25))
-
         # 📏 3B Lazer Cetvel Çizimi
         ruler.draw_3d()
+
 
         # 🧊 OctoMap İçi Dolu 3B Voksel Küpleri (Solid 3D Cubes) / 🔮 3DGS Nokta Render
         if octomap_engine.active and vbo_octo_xyz is not None and octo_line_count > 0:
