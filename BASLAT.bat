@@ -10,7 +10,7 @@ echo.
 echo  [1] ?? Canl? Dron / Webcam ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
 echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin)
-echo  [4] ?? Gazebo 3B T?nel Sim?lasyonunu Ba?lat (Ubuntu / WSL2)
+echo  [4] ?? Gazebo 3B T?nel Sim?lasyonu & Klavye U?u?u
 echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
 echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
@@ -79,13 +79,15 @@ goto MENU
 :GAZEBO_SIM
 cls
 echo =============================================================
-echo  ?? GAZEBO 3B T?NEL S?M?LASYONU BA?LATILIYOR (WSL2)...
+echo  ?? GAZEBO 3B T?NEL S?M?LASYONU VE KLAVYE U?U?U
 echo =============================================================
 echo.
-echo  [1] ?nceki Arka Plan ??lemleri Temizleniyor...
-wsl -d Ubuntu-22.04 -u root -- killall -9 gzserver gzclient gazebo 2>nul
-echo  [2] Gazebo 3B T?nel D?nyas? ve Dron A??l?yor...
-wsl -d Ubuntu-22.04 -u root -- bash -c "gazebo /mnt/c/Users/ismai/OneDrive/Masa?st?/gaussian_splatting/tunnel.world"
+echo  [1] Gazebo 3B D?nyas? Ba?lat?l?yor...
+start "" wsl -d Ubuntu-22.04 -u root -- bash -c "gazebo /mnt/c/Users/ismai/OneDrive/Masa?st?/gaussian_splatting/tunnel.world"
+echo  [2] Sim?lasyonun Y?klenmesi Bekleniyor (5 Saniye)...
+timeout /t 5 /nobreak >nul
+echo  [3] Dron Klavye U?u? ?stasyonu A??l?yor...
+python gazebo_keyboard_teleop.py
 pause
 goto MENU
 
