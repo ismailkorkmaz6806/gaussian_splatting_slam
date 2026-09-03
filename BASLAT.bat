@@ -7,42 +7,53 @@ echo =============================================================
 echo    ?? MASt3R-3DGS T?NEL VE DRON HAR?TALAMA MERKEZ?
 echo =============================================================
 echo.
-echo  [1] ?? Canl? Dron / Webcam ile Tara & 3B Harita ??kar
+echo  [1] ?? Canl? Dron / Sanal Yay?n ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
-echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin)
-echo  [4] ?? Gazebo 3B T?nel Sim?lasyonu & Klavye U?u?u
-echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
-echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
+echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin & Dron Modu)
+echo  [4] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
+echo  [5] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
 echo.
 echo =============================================================
-set /p SECIM=L?tfen bir i?lem se?in [0-6]: 
+set /p SECIM=L?tfen bir i?lem se?in [0-5]: 
 
 if "%SECIM%"=="1" goto CANLI
 if "%SECIM%"=="2" goto VIDEO_ISLE
 if "%SECIM%"=="3" goto GORUNTULE
-if "%SECIM%"=="4" goto GAZEBO_SIM
-if "%SECIM%"=="5" goto BIRLESTIR
-if "%SECIM%"=="6" goto RAPOR
+if "%SECIM%"=="4" goto BIRLESTIR
+if "%SECIM%"=="5" goto RAPOR
 if "%SECIM%"=="0" exit
 goto MENU
 
 :CANLI
 cls
 echo =============================================================
-echo  ?? CANLI DRON / KAMERA ?LE TARAMA
+echo  ?? CANLI DRON / KAMERA ?LE TARAMA VE HAR?TALAMA
 echo =============================================================
 echo.
 echo  [1] Laptop / USB Web Kameras? (#0)
-echo  [2] Dron / RTSP Canl? Yay?n? (Wi-Fi / Fiber)
+echo  [2] Ger?ek Dron Canl? Yay?n? (RTSP / Wi-Fi / Fiber)
+echo  [3] ?? Sanal Dron Canl? Yay?n Sim?lasyonu (PC ??i Test)
 echo.
-set /p K_SECIM=Se?iminiz [1 veya 2]: 
+set /p K_SECIM=Se?iminiz [1-3]: 
+if "%K_SECIM%"=="3" goto CANLI_SIMULE
 if "%K_SECIM%"=="2" goto CANLI_RTSP
 goto CANLI_WEBCAM
 
+:CANLI_SIMULE
+cls
+echo =============================================================
+echo  ?? SANAL DRON CANLI YAYINI VE HAR?TALAMA BA?LATILIYOR...
+echo =============================================================
+start "" python simulated_drone_streamer.py
+timeout /t 2 /nobreak >nul
+python live_drone_capture.py http://127.0.0.1:8554/drone_stream
+pause
+goto MENU`r
+
 :CANLI_RTSP
 echo.
-set /p RTSP_URL=RTSP Linki (Varsay?lan: rtsp://192.168.1.100:8554/stream): 
+set /p RTSP_URL=RTSP / HTTP Yay?n Linki (Varsay?lan: rtsp://192.168.1.100:8554/stream): 
 if "%RTSP_URL%"=="" set RTSP_URL=rtsp://192.168.1.100:8554/stream
 python live_drone_capture.py "%RTSP_URL%"
 pause
@@ -73,21 +84,6 @@ echo  ?? 3B MODEL G?R?NT?LEY?C? A?ILIYOR...
 echo =============================================================
 echo.
 python gaussian_renderer.py gaussian_scene.ply
-pause
-goto MENU
-
-:GAZEBO_SIM
-cls
-echo =============================================================
-echo  ?? GAZEBO 3B T?NEL S?M?LASYONU VE KLAVYE U?U?U
-echo =============================================================
-echo.
-echo  [1] Gazebo 3B D?nyas? Ba?lat?l?yor...
-start "" wsl -d Ubuntu-22.04 -u root -- /root/start_gazebo.sh
-echo  [2] Sim?lasyonun Y?klenmesi Bekleniyor (5 Saniye)...
-timeout /t 5 /nobreak >nul
-echo  [3] Dron Klavye U?u? ?stasyonu A??l?yor...
-python gazebo_keyboard_teleop.py
 pause
 goto MENU
 
