@@ -588,6 +588,7 @@ class Drone3DModel:
         if not self.active:
             return
 
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
         glPushMatrix()
         # Dron Konum ve Dönüş Matrisi
         glTranslatef(self.x, self.y, self.z)
@@ -613,7 +614,7 @@ class Drone3DModel:
         glEnd()
 
         # 2. Karbon Fiber 4 Motor Kolu (X Tipi Çapraz Kollar)
-        glLineWidth(4.0)
+        glLineWidth(3.0)
         glColor3f(0.10, 0.12, 0.15)
         glBegin(GL_LINES)
         glVertex3f(-0.9, 0.04, -0.9); glVertex3f(0.9, 0.04, 0.9)
@@ -629,17 +630,15 @@ class Drone3DModel:
         ]
 
         for mx, my, mz, p_col in motor_pos:
-            # Motor Yuvası
             glColor3f(0.12, 0.12, 0.15)
             glBegin(GL_LINES)
             glVertex3f(mx, my-0.08, mz); glVertex3f(mx, my+0.05, mz)
             glEnd()
 
-            # Dönen Pervane Çizgisi
             glPushMatrix()
             glTranslatef(mx, my+0.05, mz)
             glRotatef(self.prop_angle if mx*mz > 0 else -self.prop_angle, 0, 1, 0)
-            glLineWidth(3.0)
+            glLineWidth(2.5)
             glColor3f(*p_col)
             glBegin(GL_LINES)
             glVertex3f(-0.45, 0, 0); glVertex3f(0.45, 0, 0)
@@ -647,49 +646,48 @@ class Drone3DModel:
             glEnd()
             glPopMatrix()
 
-        # 4. 💡 Dronun Ön Feneri (Spotlight - İleriye Bakan Işık Konisi)
+        # 4. 💡 Dronun Ön Feneri (Spotlight)
         if self.spotlight:
             glEnable(GL_BLEND)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-            # Fenerin parlak gözü
-            glColor4f(1.0, 1.0, 0.85, 0.95)
-            glPointSize(10.0)
+            glColor4f(1.0, 1.0, 0.85, 0.90)
+            glPointSize(5.0)
             glBegin(GL_POINTS)
             glVertex3f(0.0, 0.0, 0.38)
             glEnd()
 
-            # Işık Huzmesi Konisi (Yarı Saydam)
-            glColor4f(0.85, 0.95, 1.0, 0.12)
+            # Işık Huzmesi Konisi (Hafif Şeffaf)
+            glColor4f(0.85, 0.95, 1.0, 0.08)
             glBegin(GL_TRIANGLE_FAN)
-            glVertex3f(0.0, 0.0, 0.38) # Işık Kaynağı
+            glVertex3f(0.0, 0.0, 0.38)
             for deg in range(0, 361, 30):
                 rad = math.radians(deg)
-                cx = math.sin(rad) * 1.8
-                cy = math.cos(rad) * 1.8
-                glVertex3f(cx, cy, 7.5) # 7.5 metre ileriye açılan ışık
+                cx = math.sin(rad) * 1.5
+                cy = math.cos(rad) * 1.5
+                glVertex3f(cx, cy, 6.0)
             glEnd()
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        # 5. 📏 TFmini Lazer İrtifa Çizgisi (Zemine İnen Kırmızı Lazer)
+        # 5. 📏 TFmini Lazer İrtifa Çizgisi
         if self.laser:
-            # Dronun dünya koordinatındaki yüksekliğine göre zemine lazer uzat
             drone_world_y = self.y
             dist_to_ground = max(0.1, (drone_world_y - floor_y) / self.scale)
 
-            glLineWidth(2.0)
+            glDisable(GL_BLEND)
+            glLineWidth(1.8)
             glColor4f(1.0, 0.15, 0.15, 0.85)
             glBegin(GL_LINES)
             glVertex3f(0.0, -0.05, 0.0)
             glVertex3f(0.0, -dist_to_ground, 0.0)
             glEnd()
 
-            # Zemindeki Kırmızı Lazer Noktası
-            glPointSize(7.0)
+            glPointSize(4.0)
             glBegin(GL_POINTS)
             glVertex3f(0.0, -dist_to_ground, 0.0)
             glEnd()
 
         glPopMatrix()
+        glPopAttrib()
+
 
 
 
