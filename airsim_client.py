@@ -1,4 +1,4 @@
-﻿import socket
+import socket
 import struct
 import time
 import os
@@ -142,4 +142,8 @@ if __name__ == "__main__":
     if out_v and os.path.exists(out_v):
         print(f"\n [OK] 3DGS Motoru Baslatiliyor...")
         import mast3r_to_3dgs
-        mast3r_to_3dgs.build_gaussian_splats_from_mast3r(out_v, 50)
+        out_ply = mast3r_to_3dgs.build_gaussian_splats_from_mast3r(out_v, 50)
+        if out_ply and os.path.exists(out_ply):
+            import subprocess
+            subprocess.run([sys.executable, "gaussian_renderer.py", out_ply])
+
