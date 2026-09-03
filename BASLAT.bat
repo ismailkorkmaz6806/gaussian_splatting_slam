@@ -10,18 +10,20 @@ echo.
 echo  [1] ?? Canl? Dron / Webcam ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
 echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin)
-echo  [4] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
-echo  [5] ?? T?nel ?nceleme ve PDF Raporu ?ret
+echo  [4] ?? AirSim Sim?lasyonundan U?u? Kaydet & 3B Harita ?ret
+echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
+echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
 echo.
 echo =============================================================
-set /p SECIM=L?tfen bir i?lem se?in [0-5]: 
+set /p SECIM=L?tfen bir i?lem se?in [0-6]: 
 
 if "%SECIM%"=="1" goto CANLI
 if "%SECIM%"=="2" goto VIDEO_ISLE
 if "%SECIM%"=="3" goto GORUNTULE
-if "%SECIM%"=="4" goto BIRLESTIR
-if "%SECIM%"=="5" goto RAPOR
+if "%SECIM%"=="4" goto AIRSIM_UCUS
+if "%SECIM%"=="5" goto BIRLESTIR
+if "%SECIM%"=="6" goto RAPOR
 if "%SECIM%"=="0" exit
 goto MENU
 
@@ -71,6 +73,16 @@ echo  ?? 3B MODEL G?R?NT?LEY?C? A?ILIYOR...
 echo =============================================================
 echo.
 python gaussian_renderer.py gaussian_scene.ply
+pause
+goto MENU
+
+:AIRSIM_UCUS
+cls
+echo =============================================================
+echo  ?? AIRSIM OTONOM U?U? VE 3DGS HAR?TALAMA
+echo =============================================================
+echo.
+python airsim_client.py
 pause
 goto MENU
 
