@@ -10,18 +10,20 @@ echo.
 echo  [1] ?? Canl? Dron / Webcam ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
 echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin)
-echo  [4] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
-echo  [5] ?? T?nel ?nceleme ve PDF Raporu ?ret
+echo  [4] ?? Gazebo 3B T?nel Sim?lasyonunu Ba?lat (Ubuntu / WSL2)
+echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
+echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
 echo.
 echo =============================================================
-set /p SECIM=L?tfen bir i?lem se?in [0-5]: 
+set /p SECIM=L?tfen bir i?lem se?in [0-6]: 
 
 if "%SECIM%"=="1" goto CANLI
 if "%SECIM%"=="2" goto VIDEO_ISLE
 if "%SECIM%"=="3" goto GORUNTULE
-if "%SECIM%"=="4" goto BIRLESTIR
-if "%SECIM%"=="5" goto RAPOR
+if "%SECIM%"=="4" goto GAZEBO_SIM
+if "%SECIM%"=="5" goto BIRLESTIR
+if "%SECIM%"=="6" goto RAPOR
 if "%SECIM%"=="0" exit
 goto MENU
 
@@ -71,6 +73,18 @@ echo  ?? 3B MODEL G?R?NT?LEY?C? A?ILIYOR...
 echo =============================================================
 echo.
 python gaussian_renderer.py gaussian_scene.ply
+pause
+goto MENU
+
+:GAZEBO_SIM
+cls
+echo =============================================================
+echo  ?? GAZEBO 3B T?NEL S?M?LASYONU BA?LATILIYOR (WSL2)...
+echo =============================================================
+echo.
+echo  [1] Ubuntu 22.04 ve RTX 4060 GPU Devreye Giriyor...
+echo  [2] 3B T?nel D?nyas? A??l?yor...
+wsl -d Ubuntu-22.04 -u root -- bash -c "gazebo /mnt/c/Users/ismai/OneDrive/Masa?st?/gaussian_splatting/tunnel.world"
 pause
 goto MENU
 
