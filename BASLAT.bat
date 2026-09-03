@@ -83,11 +83,16 @@ echo  ?? AIRSIM 3B S?M?LASYONU VE CANLI KLAVYE U?U?U
 echo =============================================================
 echo.
 echo  [1] AirSim Unreal Engine 3B D?nyas? Ba?lat?l?yor...
-start "" "%~dp0AirSim_Simulasyon\Blocks\WindowsNoEditor\Blocks.exe"
-echo  [2] Sim?lasyonun Y?klenmesi Bekleniyor (5 Saniye)...
-timeout /t 5 /nobreak >nul
-echo  [3] Dron Kontrol Paneli ve Canl? Kamera Ba?lat?l?yor...
-python airsim_keyboard_flight.py
+start "" /d "%~dp0AirSim_Simulasyon\Blocks\WindowsNoEditor" Blocks.exe
+echo  [2] Dron Haz?rland?! Klavyeyle U?abilirsiniz.
+echo.
+echo  ??? KLAVYE KONTROLLER?:
+echo    [W / S]       : Yukar? Y?ksel / A?a?? Al?al (Gaz Ver)
+echo    [Yukar?/A?a??]: ?leri / Geri U?
+echo    [Sol/Sa? Ok]  : Sola / Sa?a Yat
+echo    [A / D]       : Kendi Etraf?nda D?n (Yaw)
+echo    [F]           : Kamera A??s?n? De?i?tir (FPV / 3. ?ah?s)
+echo.
 pause
 goto MENU
 
