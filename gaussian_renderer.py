@@ -234,9 +234,11 @@ class HUDControllerPro:
                 ("🚀 PRO ÇIKTI VE VİDEO", ""),
                 ("[V] Tuşu", "🎬 60 FPS MP4 Video Kaydını Başlat / Durdur"),
                 ("[K] Tuşu", "🌐 Bağımsız Web / HTML 3B Modelini Dışa Aktar"),
-                ("[Y] / [A]", "🪞 Sağ / Sol Yönünü Tersine Çevir (Ayna)"),
+                ("[M] Tuşu", "🪞 Sağ / Sol Yönünü Aynala / Düzelt"),
+                ("[F] Tuşu", "🚁 3. Şahıs / 1. Şahıs / Serbest Dron Kamerası"),
                 ("[P] Tuşu", "🎥 Sinematik Tur | [R]: Başa Sıfırla"),
             ]
+
 
 
             cy = py + 58
@@ -590,8 +592,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     # 🔍 Zoom Sıfırla (60°)
                     cam_fov = 60.0
                     hud.set_toast("🔍 Zoom Sıfırlandı (60°)", 1.5)
-                elif event.key in (K_y, K_a):
-                    # 🪞 Sağ/Sol Aynalama
+                elif event.key == K_m:
+                    # 🪞 Sağ/Sol Aynalama ([M] Tuşu)
                     is_flipped = not is_flipped
                     xyz[:, 0] = -xyz[:, 0]
                     glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
@@ -606,7 +608,8 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     drone_x = -drone_x
                     room_bounds = FloorplanEstimator.calculate_bounds(xyz)
                     culler.init_from_bounds(xyz)
-                    hud.set_toast(f"🪞 Yön Değiştirildi: {'TERS (DÜZELTİLDİ)' if is_flipped else 'ORİJİNAL'}", 2.5)
+                    hud.set_toast(f"🪞 Sağ/Sol Yön: {'AYNALANDI (TERS)' if is_flipped else 'ORİJİNAL'}", 2.5)
+
                 elif event.key == K_p and len(auto_waypoints) > 0:
                     # 🎥 Sinematik Otomatik Tur (Rayda İlerleme + Serbest Fare Bakışı)
                     auto_tour = not auto_tour
