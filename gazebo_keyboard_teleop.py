@@ -1,4 +1,4 @@
-﻿"""
+"""
 ======================================================================================
  🎮 GAZEBO 3B DRON KLAVYE UÇUŞ İSTASYONU (WSL2 / PYTHON)
 ======================================================================================
@@ -51,8 +51,9 @@ class GazeboDroneController:
             self.vyaw *= 0.80
 
     def send_to_gazebo(self):
-        cmd = f"wsl -d Ubuntu-22.04 -u root -- gz model -m mapping_drone -x {self.x:.2f} -y {self.y:.2f} -z {self.z:.2f} -Y {self.yaw:.2f}"
+        cmd = f"wsl -d Ubuntu-22.04 -u root -- gz model -w tunnel_world -m mapping_drone -x {self.x:.2f} -y {self.y:.2f} -z {self.z:.2f} -Y {self.yaw:.2f}"
         subprocess.Popen(cmd, shell=True)
+
 
 def run_gazebo_teleop():
     controller = GazeboDroneController()
