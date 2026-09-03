@@ -10,7 +10,7 @@ echo.
 echo  [1] ?? Canl? Dron / Webcam ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
 echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin)
-echo  [4] ?? AirSim Sim?lasyonundan U?u? Kaydet & 3B Harita ?ret
+echo  [4] ?? AirSim 3B Sim?lasyonu Ba?lat & Otonom U?ur
 echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
 echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
@@ -79,9 +79,14 @@ goto MENU
 :AIRSIM_UCUS
 cls
 echo =============================================================
-echo  ?? AIRSIM OTONOM U?U? VE 3DGS HAR?TALAMA
+echo  ?? AIRSIM 3B S?M?LASYONU VE OTONOM U?U?
 echo =============================================================
 echo.
+echo  [1] AirSim Unreal Engine 3B D?nyas? Ba?lat?l?yor...
+start "" "%~dp0AirSim_Simulasyon\Blocks\WindowsNoEditor\Blocks.exe"
+echo  [2] Sim?lasyonun Y?klenmesi Bekleniyor (7 Saniye)...
+timeout /t 7 /nobreak >nul
+echo  [3] Dron Otonom U?u?u ve Video Kayd? Ba?lat?l?yor...
 python airsim_client.py
 pause
 goto MENU

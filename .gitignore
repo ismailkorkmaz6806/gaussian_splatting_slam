@@ -13,6 +13,8 @@ venv/
 *.npz
 *.splat
 *.obj
+*.zip
+AirSim_Simulasyon/
 
 # Video Test Files
 *.mp4
