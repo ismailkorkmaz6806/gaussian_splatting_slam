@@ -1,4 +1,4 @@
-﻿"""
+"""
 ======================================================================================
  🚁 SANAL DRON CANLI VİDEO YAYIN SUNUCUSU (simulated_drone_streamer.py)
 ======================================================================================
@@ -59,15 +59,9 @@ def video_stream_producer():
             frame_idx += 1
             elapsed = time.time() - t0
 
-            # Dron Telemetri OSD Katmanı (Gerçek FPV Dron Bilgileri)
-            h, w = frame.shape[:2]
-            # OSD Alt Şerit
-            cv2.putText(frame, "DRONE-01 [LIVE TX 5.8G]", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.putText(frame, f"BAT: 15.6V | ALT: {1.2 + 0.1*np.sin(frame_idx*0.1):.2f}m", (20, h - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            cv2.putText(frame, f"REC: {elapsed:.1f}s | FPS: {fps:.0f}", (w - 220, h - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            # Ham temiz kamera karesini JPEG olarak sıkıştır (Yapay zeka için pikseller tertemiz olmalı)
+            ret_enc, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
 
-            # JPEG Formatına Sıkıştır
-            ret_enc, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             if ret_enc:
                 with lock:
                     current_frame_jpeg = jpeg.tobytes()
