@@ -368,10 +368,14 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         traj_data = np.load(traj_path, allow_pickle=True)
         auto_waypoints = traj_data["positions"].copy()
 
-    # 🪞 Orijinal Çekim Yönü (Aynasız, gerçek kamera açısı)
-    is_flipped = False
+    # 🪞 Gerçek Dünya Sağ/Sol Hizalaması (Aynalama Düzeltildi)
+    xyz[:, 0] = -xyz[:, 0]
+    if len(auto_waypoints) > 0:
+        auto_waypoints[:, 0] = -auto_waypoints[:, 0]
+    is_flipped = True
     num_splats = len(xyz)
     room_bounds = FloorplanEstimator.calculate_bounds(xyz)
+
 
     # Modül Yöneticilerini Başlat
     culler = CeilingCuller()
