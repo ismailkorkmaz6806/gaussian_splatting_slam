@@ -1,0 +1,167 @@
+﻿<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="tunnel_drone_world">
+    <physics name="1ms" type="dart">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin
+      filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin
+      filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+
+    <!-- Işıklandırma -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 15 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Zemin -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.4 0.45 0.5 1</ambient>
+            <diffuse>0.5 0.55 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Tünel Duvarı 1 (Sol Duvar) -->
+    <model name="wall_left">
+      <static>true</static>
+      <pose>10 -3 2 0 0 0</pose>
+      <link name="link">
+        <collision name="c">
+          <geometry><box><size>30 0.5 4</size></box></geometry>
+        </collision>
+        <visual name="v">
+          <geometry><box><size>30 0.5 4</size></box></geometry>
+          <material><ambient>0.6 0.3 0.2 1</ambient><diffuse>0.7 0.35 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Tünel Duvarı 2 (Sağ Duvar) -->
+    <model name="wall_right">
+      <static>true</static>
+      <pose>10 3 2 0 0 0</pose>
+      <link name="link">
+        <collision name="c">
+          <geometry><box><size>30 0.5 4</size></box></geometry>
+        </collision>
+        <visual name="v">
+          <geometry><box><size>30 0.5 4</size></box></geometry>
+          <material><ambient>0.6 0.3 0.2 1</ambient><diffuse>0.7 0.35 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Tünel İçi Engeller (Kutular & Sütunlar) -->
+    <model name="obstacle_box1">
+      <static>true</static>
+      <pose>5 -1.2 0.75 0 0 0.3</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>1.5 1.5 1.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.5 1.5 1.5</size></box></geometry>
+          <material><ambient>0.2 0.5 0.8 1</ambient><diffuse>0.3 0.6 0.9 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_box2">
+      <static>true</static>
+      <pose>12 1.0 1.0 0 0 -0.4</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>2.0 1.2 2.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>2.0 1.2 2.0</size></box></geometry>
+          <material><ambient>0.8 0.6 0.1 1</ambient><diffuse>0.9 0.7 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 🚁 Kameralı Dron Modeli (Quadcopter) -->
+    <model name="drone_camera">
+      <pose>0 0 1.2 0 0 0</pose>
+      <link name="base_link">
+        <inertial>
+          <mass>1.5</mass>
+          <inertia>
+            <ixx>0.034</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>0.034</iyy><iyz>0</iyz><izz>0.06</izz>
+          </inertia>
+        </inertial>
+        <collision name="c">
+          <geometry><box><size>0.45 0.45 0.15</size></box></geometry>
+        </collision>
+        <visual name="v">
+          <geometry><box><size>0.45 0.45 0.15</size></box></geometry>
+          <material><ambient>0.1 0.1 0.15 1</ambient><diffuse>0.2 0.2 0.25 1</diffuse></material>
+        </visual>
+
+        <!-- Ön Kamera Sensörü -->
+        <sensor name="camera" type="camera">
+          <pose>0.25 0 0 0 0 0</pose>
+          <camera>
+            <horizontal_fov>1.2</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>100</far>
+            </clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>30</update_rate>
+          <visualize>true</visualize>
+          <topic>camera</topic>
+        </sensor>
+      </link>
+
+      <!-- Dron Hareket Eklentisi (Klavye / Velocity Control) -->
+      <plugin
+        filename="gz-sim-velocity-control-system"
+        name="gz::sim::systems::VelocityControl">
+        <topic>cmd_vel</topic>
+      </plugin>
+    </model>
+  </world>
+</sdf>
