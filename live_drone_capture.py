@@ -58,13 +58,29 @@ def run_drone_capture(camera_source=0, target_keyframes=45):
         if not cap.isOpened():
             cap = cv2.VideoCapture(source)
     else:
-        # RTSP veya video dosyası
-        cap = cv2.VideoCapture(source)
+        # RTSP / HTTP Canlı Video Akışı (Webots / Dron için 30 sn bağlantı bekleme döngüsü)
+        print(f" ⏳ Canlı Video Yayınına Bağlanılıyor: {source}")
+        print(" -> Webots/Dron başlatılıyor, lütfen bekleyin (Webots açılınca üstteki Play ▶️ tuşuna basın)...")
+        cap = None
+        t_start = time.time()
+        while time.time() - t_start < 35:
+            temp_cap = cv2.VideoCapture(source)
+            if temp_cap.isOpened():
+                ret, test_frame = temp_cap.read()
+                if ret and test_frame is not None:
+                    cap = temp_cap
+                    print("\n ✅ Canlı Dron Kamera Akışına Başarıyla Bağlanıldı!")
+                    break
+                temp_cap.release()
+            time.sleep(1.0)
+            kalan = int(35 - (time.time() - t_start))
+            print(f" -> Bağlantı bekleniyor... ({kalan} sn)", end='\r', flush=True)
 
-    if not cap.isOpened():
-        print(f"❌ HATA: Kamera açılamadı veya bağlanılamadı: {camera_source}")
-        print(" -> Kameranızın başka bir program (Zoom, Teams, Tarayıcı) tarafından kullanılmadığından emin olun.")
+    if cap is None or not cap.isOpened():
+        print(f"\n❌ HATA: Kamera açılamadı veya canlı yayına bağlanılamadı: {camera_source}")
+        print(" -> Webots simülasyonunun çalıştığından (Play ▶️) emin olun.")
         return
+
 
     recording = False      # Kayıt/tarama aktif mi?
     recorded_frames = []   # Taranan video karelerini bellekte tutan liste
