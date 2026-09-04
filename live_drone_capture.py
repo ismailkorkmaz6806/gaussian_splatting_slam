@@ -58,9 +58,10 @@ def run_drone_capture(camera_source=0, target_keyframes=45):
         if not cap.isOpened():
             cap = cv2.VideoCapture(source)
     else:
-        # RTSP / HTTP Canlı Video Akışı (Webots / Dron için 30 sn bağlantı bekleme döngüsü)
+        # RTSP / HTTP Canlı Video Akışı (Dron / Gazebo için 35 sn bağlantı bekleme döngüsü)
         print(f" ⏳ Canlı Video Yayınına Bağlanılıyor: {source}")
-        print(" -> Webots/Dron başlatılıyor, lütfen bekleyin (Webots açılınca üstteki Play ▶️ tuşuna basın)...")
+        print(" -> Dron / Gazebo yayını bekleniyor, lütfen bekleyin...")
+
         cap = None
         t_start = time.time()
         while time.time() - t_start < 35:
