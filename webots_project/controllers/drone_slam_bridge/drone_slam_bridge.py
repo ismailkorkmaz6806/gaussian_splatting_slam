@@ -1,13 +1,4 @@
 ﻿# -*- coding: utf-8 -*-
-"""
-========================================================================================
- 🚁 WEBOTS DRON - 3DGS SLAM KÖPRÜSÜ (drone_slam_bridge.py)
-========================================================================================
-Bu kontrolcü, Webots içindeki DJI Mavic 2 Pro dronu uçurur ve kamerasından aldığı
-canlı görüntüyü yerel ağa (http://127.0.0.1:8554/drone_stream) basar.
-========================================================================================
-"""
-
 import os
 import sys
 import time
@@ -17,10 +8,21 @@ import numpy as np
 import cv2
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Webots Controller API
-from controller import Robot, Keyboard
+# Debug log
+log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge_debug.log")
+def log_msg(msg):
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
 
-# Global Frame Buffer & Lock
+log_msg("=== Drone SLAM Bridge Baslatildi ===")
+
+try:
+    from controller import Robot, Keyboard
+    log_msg("controller Robot import basarili")
+except Exception as e:
+    log_msg(f"Import hatasi: {e}")
+    sys.exit(1)
+
 latest_jpeg = None
 lock = threading.Lock()
 
@@ -51,11 +53,15 @@ class WebotsStreamHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def log_message(self, format, *args):
-        pass # Konsolu loglarla doldurma
+        pass
 
 def start_http_stream_server(port=8554):
-    server = HTTPServer(('0.0.0.0', port), WebotsStreamHandler)
-    server.serve_forever()
+    try:
+        server = HTTPServer(('0.0.0.0', port), WebotsStreamHandler)
+        log_msg(f"HTTP Server port {port} uzerinde dinliyor...")
+        server.serve_forever()
+    except Exception as e:
+        log_msg(f"HTTP Server hatasi: {e}")
 
 def clamp(val, v_min, v_max):
     return min(max(val, v_min), v_max)
@@ -70,6 +76,7 @@ class DroneSlamBridge(Robot):
     def __init__(self):
         super().__init__()
         self.time_step = int(self.getBasicTimeStep())
+        log_msg(f"Robot baslatildi. time_step: {self.time_step}")
 
         # Sensörleri Başlat
         self.camera = self.getDevice("camera")
@@ -94,32 +101,22 @@ class DroneSlamBridge(Robot):
         self.rr_motor = self.getDevice("rear right propeller")
         self.cam_pitch_motor = self.getDevice("camera pitch")
         if self.cam_pitch_motor:
-            self.cam_pitch_motor.setPosition(0.2)  # Hafif ileri/aşağı bakış açısı
+            self.cam_pitch_motor.setPosition(0.2)
 
         for m in [self.fl_motor, self.fr_motor, self.rl_motor, self.rr_motor]:
             m.setPosition(float('inf'))
             m.setVelocity(1.0)
 
         self.target_altitude = 1.3
-        self.target_yaw = 0.0
-        print("\n" + "="*65)
-        print(" 🚁 WEBOTS DRON SLAM KÖPRÜSÜ AKTİF!")
-        print(f" 📹 Kamera: {self.cam_w}x{self.cam_h} px")
-        print(" 📡 Canlı Yayın: http://127.0.0.1:8554/drone_stream")
-        print(" 🕹️ Klavye Kontrolleri:")
-        print("    [YUKARI / ASAGI / SOL / SAG] : İleri / Geri / Sağa / Sola Uç")
-        print("    [W / S] : İrtifa Yüksel / Alçal | [A / D] : Yaw Dönüşü")
-        print("="*65 + "\n")
+        log_msg("Dron cihazlari ve motorlari hazir!")
 
     def run(self):
         global latest_jpeg
-
-        # HTTP Sunucusunu Arka Planda Başlat
         t = threading.Thread(target=start_http_stream_server, args=(8554,), daemon=True)
         t.start()
 
+        log_msg("Dongu basladi...")
         while self.step(self.time_step) != -1:
-            # 1. Kameradan Görüntü Al ve Canlı Yayına Bas
             img_raw = self.camera.getImage()
             if img_raw:
                 img_arr = np.frombuffer(img_raw, np.uint8).reshape((self.cam_h, self.cam_w, 4))
@@ -129,7 +126,6 @@ class DroneSlamBridge(Robot):
                     with lock:
                         latest_jpeg = jpeg.tobytes()
 
-            # 2. Sensör Verileri
             roll = self.imu.getRollPitchYaw()[0]
             pitch = self.imu.getRollPitchYaw()[1]
             yaw = self.imu.getRollPitchYaw()[2]
@@ -137,7 +133,6 @@ class DroneSlamBridge(Robot):
             roll_vel = self.gyro.getValues()[0]
             pitch_vel = self.gyro.getValues()[1]
 
-            # 3. Klavye Kontrolleri
             k = self.keyboard.getKey()
             pitch_dist = 0.0
             roll_dist = 0.0
@@ -160,7 +155,6 @@ class DroneSlamBridge(Robot):
             elif k in (ord('D'), ord('d')):
                 yaw_dist = -0.8
 
-            # 4. PID Uçuş Stabilizasyonu
             roll_input = self.K_ROLL_P * clamp(roll, -1.0, 1.0) + roll_vel + roll_dist
             pitch_input = self.K_PITCH_P * clamp(pitch, -1.0, 1.0) - pitch_vel + pitch_dist
             yaw_input = yaw_dist
