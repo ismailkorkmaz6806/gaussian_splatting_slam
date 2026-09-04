@@ -1,0 +1,39 @@
+﻿# ========================================================================================
+# 🚀 3D GAUSSIAN SPLATTING & DRON TÜNEL SLAM PROJESİ - GEREKSİNİMLER (requirements.txt)
+# ========================================================================================
+# Bu proje NVIDIA CUDA hızlandırmalı PyTorch, 3B OpenGL motoru ve CVPR MASt3R yapay zekasını kullanır.
+# Kurulum için: pip install -r requirements.txt
+# ========================================================================================
+
+# 1. 🧠 Yapay Zeka & Derin Öğrenme (PyTorch CUDA)
+# NOT: CUDA destekli PyTorch için: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
+transformers>=4.40.0
+huggingface-hub>=0.23.0
+timm>=0.9.16
+einops>=0.7.0
+
+# 2. 👁️ Bilgisayarlı Görü ve Görüntü İşleme
+opencv-python>=4.8.0
+numpy>=1.24.0,<2.0.0
+scipy>=1.11.0
+Pillow>=10.0.0
+
+# 3. 🔮 3B Nokta Bulutu, Mesh & Gaussian Splatting
+plyfile>=1.0.0
+trimesh>=4.0.0
+scikit-learn>=1.3.0
+
+# 4. 🎮 144+ FPS 3B OpenGL Görüntüleyici & Dron Simülatörü
+PyOpenGL>=3.1.7
+PyOpenGL_accelerate>=3.1.7
+pygame-ce>=2.5.0
+
+# 5. 📄 Raporlama, Video & Veri İndirme
+reportlab>=4.1.0
+matplotlib>=3.8.0
+yt-dlp>=2024.0.0
+requests>=2.31.0
+tqdm>=4.66.0
