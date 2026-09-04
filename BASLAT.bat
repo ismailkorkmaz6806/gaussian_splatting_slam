@@ -10,19 +10,25 @@ echo.
 echo  [1] ?? Canl? Dron / Sanal Yay?n ile Tara & 3B Harita ??kar
 echo  [2] ?? Bir MP4 Videosunu 3B Modele D?n??t?r
 echo  [3] ?? 3B Haritay? A? (144+ FPS Gezgin & Dron Modu)
-echo  [4] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
-echo  [5] ?? T?nel ?nceleme ve PDF Raporu ?ret
+echo  [4] ?? Webots 3B Dron Robotik Sim?lat?r?n? A? & Tara
+echo  [5] ?? ?oklu Koridorlar? Tek Haritada Birle?tir
+echo  [6] ?? T?nel ?nceleme ve PDF Raporu ?ret
 echo  [0] ? ??k??
 echo.
 echo =============================================================
-set /p SECIM=L?tfen bir i?lem se?in [0-5]: 
+set /p SECIM=L?tfen bir i?lem se?in [0-6]: 
 
 if "%SECIM%"=="1" goto CANLI
 if "%SECIM%"=="2" goto VIDEO_ISLE
 if "%SECIM%"=="3" goto GORUNTULE
-if "%SECIM%"=="4" goto BIRLESTIR
-if "%SECIM%"=="5" goto RAPOR
+if "%SECIM%"=="4" goto WEBOTS
+if "%SECIM%"=="5" goto BIRLESTIR
+if "%SECIM%"=="6" goto RAPOR
 if "%SECIM%"=="0" exit
+goto MENU
+
+:WEBOTS
+call calistir_webots_simulasyon.bat
 goto MENU
 
 :CANLI
@@ -49,7 +55,7 @@ start "" python simulated_drone_streamer.py
 timeout /t 2 /nobreak >nul
 python live_drone_capture.py http://127.0.0.1:8554/drone_stream
 pause
-goto MENU`r
+goto MENU
 
 :CANLI_RTSP
 echo.
