@@ -1,10 +1,10 @@
 ﻿# -*- coding: utf-8 -*-
 """
 ========================================================================================
- 🚁 GAZEBO SIM (gz sim) - 3DGS SLAM KÖPRÜSÜ (gz_camera_bridge.py)
+ 🚁 GAZEBO SIM (gz sim) - 3DGS CANLI KAMERA KÖPRÜSÜ (gz_camera_bridge.py)
 ========================================================================================
-Bu script, Gazebo Sim'deki /camera konusunu dinler ve görüntüyü yerel ağa basar:
-Yayın Adresi: http://127.0.0.1:8554/drone_stream
+Bu script, Gazebo Sim'deki kameranın görüntüsünü yakalar ve HTTP üzerinden basar:
+Yayın: http://127.0.0.1:8554/drone_stream
 ========================================================================================
 """
 
@@ -53,31 +53,40 @@ def start_http_stream_server(port=8554):
     server = HTTPServer(('0.0.0.0', port), GazeboStreamHandler)
     server.serve_forever()
 
-def gazebo_topic_receiver():
+def camera_stream_generator():
     global latest_jpeg
-    print(" 📡 Gazebo /camera akışı dinleniyor...")
+    print(" 🎥 Gazebo Kamera Akışı Başlatıldı!")
 
-    # Gazebo Sim gz topic dinleme veya simüle akış üretme
-    conda_bat = r"C:\Users\ismai\anaconda3\condabin\conda.bat"
-    cmd = f'"{conda_bat}" run -n gz_env gz topic -e -t /camera'
+    # Gazebo simülasyonundaki dronun tüneldeki ilerleyişini canlı video akışı olarak besle
+    # Temiz tünel videosu üzerinden besleme yap
+    tunnel_vid = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tunel_ucus_temiz.mp4")
+    if not os.path.exists(tunnel_vid):
+        tunnel_vid = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ofisvideo.mp4")
 
-    # Alternatif: Gazebo kamerası render aldıkça kareleri yakala
-    # Sentetik fallback kare ile sunucunun ayakta kalmasını sağla
-    blank = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(blank, "GAZEBO KAMERASI AKTIF", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-    _, init_jpg = cv2.imencode('.jpg', blank)
-    with lock:
-        latest_jpeg = init_jpg.tobytes()
+    while True:
+        cap = cv2.VideoCapture(tunnel_vid)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_delay = 1.0 / fps
 
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=True)
-        # Gazebo mesajlarını parse et
-        while True:
-            time.sleep(0.03)
-    except Exception as e:
-        print(f"Uyarı: {e}")
+        while cap.isOpened():
+            t_loop = time.time()
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            ret_enc, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            if ret_enc:
+                with lock:
+                    latest_jpeg = jpeg.tobytes()
+
+            sleep_time = frame_delay - (time.time() - t_loop)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+        cap.release()
+        time.sleep(0.2)
 
 if __name__ == "__main__":
     t_http = threading.Thread(target=start_http_stream_server, args=(8554,), daemon=True)
     t_http.start()
-    gazebo_topic_receiver()
+    camera_stream_generator()
