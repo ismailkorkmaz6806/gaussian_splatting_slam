@@ -1,0 +1,277 @@
+<?xml version="1.0" ?>
+<sdf version='1.9'>
+  <world name='default'>
+
+    <!-- Gazebo Sim Harmonic Eklentileri -->
+    <plugin filename="gz-sim-physics-system"     name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system"     name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <!-- Yeraltı Maden Ambiyansı -->
+    <scene>
+      <ambient>0.18 0.17 0.15 1.0</ambient>
+      <background>0.01 0.01 0.02 1.0</background>
+      <shadows>0</shadows>
+    </scene>
+
+    <gravity>0 0 -9.8066</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <physics name='default_physics' default='0' type='ode'>
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <!-- Aydınlatmalar -->
+    <light type="point" name="entrance_light">
+      <pose>-2.0 0.0 3.5 0 0 0</pose>
+      <diffuse>0.90 0.85 0.72 1</diffuse>
+      <specular>0.15 0.15 0.12 1</specular>
+      <attenuation>
+        <range>30</range><constant>0.22</constant>
+        <linear>0.05</linear><quadratic>0.008</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="deep_gallery_light">
+      <pose>30.0 -5.0 4.0 0 0 0</pose>
+      <diffuse>0.85 0.82 0.70 1</diffuse>
+      <specular>0.12 0.12 0.10 1</specular>
+      <attenuation>
+        <range>45</range><constant>0.20</constant>
+        <linear>0.04</linear><quadratic>0.005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="gallery_b_light">
+      <pose>60.0 -20.0 3.5 0 0 0</pose>
+      <diffuse>0.88 0.84 0.75 1</diffuse>
+      <specular>0.12 0.12 0.10 1</specular>
+      <attenuation>
+        <range>40</range><constant>0.22</constant>
+        <linear>0.05</linear><quadratic>0.007</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="tunnel_deep_light">
+      <pose>80.0 -40.0 3.0 0 0 0</pose>
+      <diffuse>0.82 0.80 0.72 1</diffuse>
+      <specular>0.10 0.10 0.08 1</specular>
+      <attenuation>
+        <range>35</range><constant>0.25</constant>
+        <linear>0.06</linear><quadratic>0.009</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <!-- lc_mine COLLADA Maden Mesh (sadece VISUAL – DART crash önlemi) -->
+    <model name="lc_mine_world">
+      <static>true</static>
+      <pose>-2.0 0.0 -1.0 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <mesh>
+              <uri>model://lc_mine/untitled2.dae</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <ambient>0.25 0.22 0.18 1</ambient>
+            <diffuse>0.85 0.80 0.70 1</diffuse>
+            <specular>0.08 0.07 0.06 1</specular>
+          </material>
+          <cast_shadows>false</cast_shadows>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         🏗️  GÖRÜNMEZ ÇARPIŞMA GEOMETRİLERİ (Fiziksel Sınırlar)
+         Mine mesh collision DART'ı crash ediyor. Bunun yerine:
+         - Zemin düzlemi  (z = -0.8)  → dron çarptığında düşmeyi durdurur
+         - Tavan kutusu   (z = +6.5)  → dron tavana çarptığında durur
+         - Yan duvarlar               → ana koridoru yaklaşık sınırlar
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- ZEMIN: Maden tabanı (dron yerçekimiyle düştüğünde buraya çarpar) -->
+    <model name="mine_floor">
+      <static>true</static>
+      <pose>40.0 -20.0 -0.85 0 0 0</pose>
+      <link name="link">
+        <collision name="floor_col">
+          <geometry>
+            <box><size>250 120 0.3</size></box>
+          </geometry>
+          <surface>
+            <friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel></ode></contact>
+          </surface>
+        </collision>
+        <!-- Görünmez – sadece çarpışma için -->
+      </link>
+    </model>
+
+    <!-- TAVAN: Dron yukarı kaçmasın -->
+    <model name="mine_ceiling">
+      <static>true</static>
+      <pose>40.0 -20.0 6.8 0 0 0</pose>
+      <link name="link">
+        <collision name="ceil_col">
+          <geometry>
+            <box><size>250 120 0.3</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- SOL DUVAR (Y+ yönü): ana koridor sol sınırı -->
+    <model name="mine_wall_left">
+      <static>true</static>
+      <pose>40.0 8.0 3.0 0 0 0</pose>
+      <link name="link">
+        <collision name="wall_col">
+          <geometry>
+            <box><size>250 0.3 15</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- SAĞ DUVAR (Y- yönü): ana koridor sağ sınırı -->
+    <model name="mine_wall_right">
+      <static>true</static>
+      <pose>40.0 -75.0 3.0 0 0 0</pose>
+      <link name="link">
+        <collision name="wall_col">
+          <geometry>
+            <box><size>250 0.3 15</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- GİRİŞ DUVARI (X- yönü): maden girişi arkası -->
+    <model name="mine_wall_back">
+      <static>true</static>
+      <pose>-4.0 -20.0 3.0 0 0 0</pose>
+      <link name="link">
+        <collision name="wall_col">
+          <geometry>
+            <box><size>0.3 120 15</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         🚁 DARPA Maden Keşif Dronu
+             gravity=TRUE  → Yerçekimi aktif, duvara çarpınca düşer
+             VelocityControl → /cmd_vel ile yatay ve dikey hız kontrolü
+         ═══════════════════════════════════════════════════════════════ -->
+    <model name="cave_drone">
+      <pose>0.0 0.0 2.0 0 0 0</pose>
+      <static>false</static>
+      <link name="base_link">
+        <!-- gravity etiketi YOK → world gravity (0,0,-9.8) devrede -->
+        <inertial>
+          <mass>1.2</mass>
+          <inertia><ixx>0.03</ixx><iyy>0.03</iyy><izz>0.05</izz></inertia>
+        </inertial>
+
+        <visual name="body">
+          <geometry><box><size>0.4 0.4 0.12</size></box></geometry>
+          <material>
+            <ambient>0.1 0.1 0.12 1</ambient>
+            <diffuse>0.2 0.2 0.25 1</diffuse>
+          </material>
+        </visual>
+        <collision name="col">
+          <geometry><box><size>0.4 0.4 0.12</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.4</mu><mu2>0.4</mu2></ode></friction>
+            <!-- Çarpma anında hızı sıfırla (elastiklik yok) -->
+            <bounce>
+              <restitution_coefficient>0.0</restitution_coefficient>
+              <threshold>0.01</threshold>
+            </bounce>
+          </surface>
+        </collision>
+
+        <visual name="arm1">
+          <geometry><cylinder><radius>0.02</radius><length>0.5</length></cylinder></geometry>
+          <pose>0 0 0 0 1.57 0.785</pose>
+          <material><ambient>0.9 0.1 0.1 1</ambient></material>
+        </visual>
+        <visual name="arm2">
+          <geometry><cylinder><radius>0.02</radius><length>0.5</length></cylinder></geometry>
+          <pose>0 0 0 0 1.57 -0.785</pose>
+          <material><ambient>0.1 0.4 0.9 1</ambient></material>
+        </visual>
+
+        <!-- Maden Keşif Feneri -->
+        <light type="spot" name="drone_headlight">
+          <pose>0.25 0 0.05 0 0 0</pose>
+          <diffuse>0.40 0.40 0.42 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
+          <attenuation>
+            <range>40</range>
+            <constant>0.80</constant>
+            <linear>0.04</linear>
+            <quadratic>0.005</quadratic>
+          </attenuation>
+          <spot>
+            <inner_angle>1.10</inner_angle>
+            <outer_angle>1.60</outer_angle>
+            <falloff>0.45</falloff>
+          </spot>
+          <direction>1 0 0</direction>
+          <cast_shadows>false</cast_shadows>
+        </light>
+
+        <!-- HD Kamera (Ufka Paralel, 150m Far Clip) -->
+        <sensor name="camera" type="camera">
+          <pose>0.25 0 0.05 0 0 0</pose>
+          <camera>
+            <horizontal_fov>1.396</horizontal_fov>
+            <image>
+              <width>800</width>
+              <height>600</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.05</near>
+              <far>150.0</far>
+            </clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>30</update_rate>
+          <visualize>true</visualize>
+          <topic>camera</topic>
+        </sensor>
+      </link>
+
+      <!-- Hız Kontrol Eklentisi -->
+      <plugin
+        filename="gz-sim-velocity-control-system"
+        name="gz::sim::systems::VelocityControl">
+        <initial_linear>0 0 0</initial_linear>
+        <initial_angular>0 0 0</initial_angular>
+        <topic>/cmd_vel</topic>
+      </plugin>
+
+      <!-- Odometri Yayini -->
+      <plugin
+        filename="gz-sim-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <odom_topic>/model/cave_drone/odometry</odom_topic>
+        <dimensions>3</dimensions>
+      </plugin>
+    </model>
+
+  </world>
+</sdf>
