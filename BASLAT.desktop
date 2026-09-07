@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=3DGS SLAM Başlat
+Comment=3D Gaussian Splatting & Drone SLAM Merkezi
+Exec=gnome-terminal --title="3DGS SLAM Merkezi" --working-directory=/home/ismail/gaussian_splatting_slam -- bash -c "./BASLAT.sh; echo ''; echo 'Program sonlandı. Çıkmak için Enter tuşuna basın...'; read"
+Icon=utilities-terminal
+Path=/home/ismail/gaussian_splatting_slam
+Terminal=false
+Categories=Development;
+StartupNotify=true
