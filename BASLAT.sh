@@ -39,11 +39,11 @@ while true; do
     echo ""
     echo "  [1] 📹 Canlı Dron / Kamera ile Tara & 3B Harita Çıkar"
     echo "  [2] 🎬 Bir MP4 Videosunu 3B Modele Dönüştür"
-    echo "  [3] 🔮 3B Haritayı Aç (144+ FPS Gezgin & 3B Dron Modu)"
+    echo "  [3] 🏢 Ofis 3B Haritasını Görüntüle (gaussian_scene.ply)"
     echo "  [4] 🎮 3B Dron & Tünel Simülatörü (Klavye ile Serbest Uçuş)"
-    echo "  [5] 🧩 Çoklu Koridorları Tek Haritada Birleştir"
+    echo "  [5] 🚇 Eski Tünel 3B Haritasını Görüntüle (drone_scene.ply)"
     echo "  [6] 📄 Tünel İnceleme ve PDF/HTML Raporu Üret"
-    echo "  [7] 🦇 DARPA SubT Gerçek Mağara Simülasyonu & 3DGS Haritalama"
+    echo "  [7] 🦇 DARPA SubT Mağara Görevi (Simülasyon & 3B Harita)"
     echo "  [0] ❌ Çıkış"
     echo ""
     echo -e "${CYAN}=============================================================${NC}"
@@ -98,27 +98,13 @@ while true; do
         3)
             clear
             echo -e "${CYAN}=============================================================${NC}"
-            echo -e "${GREEN}  🔮 3B MODEL GÖRÜNTÜLEYİCİ AÇILIYOR...${NC}"
+            echo -e "${GREEN}  🏢 OFİS VİDEOSU 3B HARİTASI AÇILIYOR...${NC}"
             echo -e "${CYAN}=============================================================${NC}"
             echo ""
-            echo "  [1] 🏢 Ofis Videosu Haritası (gaussian_scene.ply)"
-            echo "  [2] 🚇 Eski Tünel Haritası (drone_scene.ply)"
-            echo "  [3] 🦇 DARPA SubT Mağara Haritası (cave_scene.ply)"
-            echo ""
-            read -p "Hangi haritayı açmak istersiniz? [1-3]: " MAP_SECIM
-            
-            if [ "$MAP_SECIM" == "3" ]; then
-                TARGET_PLY="cave_scene.ply"
-            elif [ "$MAP_SECIM" == "2" ]; then
-                TARGET_PLY="drone_scene.ply"
+            if [ -f "gaussian_scene.ply" ]; then
+                python3 gaussian_renderer.py gaussian_scene.ply
             else
-                TARGET_PLY="gaussian_scene.ply"
-            fi
-            
-            if [ -f "$TARGET_PLY" ]; then
-                python3 gaussian_renderer.py "$TARGET_PLY"
-            else
-                echo -e "${RED}❌ Hata: $TARGET_PLY bulunamadı! Önce haritalama yapmalısınız.${NC}"
+                echo -e "${RED}❌ Hata: gaussian_scene.ply bulunamadı!${NC}"
             fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
@@ -134,10 +120,14 @@ while true; do
         5)
             clear
             echo -e "${CYAN}=============================================================${NC}"
-            echo -e "${GREEN}  🧩 ÇOKLU HARİTALARI BİRLEŞTİRME${NC}"
+            echo -e "${GREEN}  🚇 ESKİ TÜNEL HARİTASI AÇILIYOR...${NC}"
             echo -e "${CYAN}=============================================================${NC}"
             echo ""
-            python3 map_stitcher.py
+            if [ -f "drone_scene.ply" ]; then
+                python3 gaussian_renderer.py drone_scene.ply
+            else
+                echo -e "${RED}❌ Hata: drone_scene.ply bulunamadı!${NC}"
+            fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
         6)
@@ -155,10 +145,22 @@ while true; do
         7)
             clear
             echo -e "${CYAN}=============================================================${NC}"
-            echo -e "${GREEN}  🦇 DARPA SUBT GERÇEK MAĞARA SİMÜLASYONU & 3DGS HARİTALAMA${NC}"
+            echo -e "${GREEN}  🦇 DARPA SUBT MAĞARA GÖREVİ${NC}"
             echo -e "${CYAN}=============================================================${NC}"
             echo ""
-            ./calistir_magara_sim.sh
+            echo "  [1] 🚁 Otopilotlu Mağara Simülasyonunu Başlat (Veri Topla)"
+            echo "  [2] 🔮 Çıkarılan 3B Mağara Haritasını Görüntüle"
+            echo ""
+            read -p "Seçiminiz [1-2]: " MAGARA_SECIM
+            if [ "$MAGARA_SECIM" == "2" ]; then
+                if [ -f "cave_scene.ply" ]; then
+                    python3 gaussian_renderer.py cave_scene.ply
+                else
+                    echo -e "${RED}❌ Hata: cave_scene.ply bulunamadı! Önce 1. seçenekle tarama yapmalısınız.${NC}"
+                fi
+            else
+                ./calistir_magara_sim.sh
+            fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
         0)
