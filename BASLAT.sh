@@ -26,9 +26,8 @@ if [ -f "$SCRIPT_DIR/venv/bin/activate" ]; then
     source "$SCRIPT_DIR/venv/bin/activate"
 fi
 
-# NVIDIA RTX 4060 Donanım Hızlandırmasını Zorla
+# NVIDIA RTX Donanım Hızlandırması
 export __NV_PRIME_RENDER_OFFLOAD=1
-export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export __GL_SYNC_TO_VBLANK=0
 export vblank_mode=0
 
@@ -102,7 +101,25 @@ while true; do
             echo -e "${GREEN}  🔮 3B MODEL GÖRÜNTÜLEYİCİ AÇILIYOR...${NC}"
             echo -e "${CYAN}=============================================================${NC}"
             echo ""
-            python3 gaussian_renderer.py gaussian_scene.ply
+            echo "  [1] 🏢 Ofis Videosu Haritası (gaussian_scene.ply)"
+            echo "  [2] 🚇 Eski Tünel Haritası (drone_scene.ply)"
+            echo "  [3] 🦇 DARPA SubT Mağara Haritası (cave_scene.ply)"
+            echo ""
+            read -p "Hangi haritayı açmak istersiniz? [1-3]: " MAP_SECIM
+            
+            if [ "$MAP_SECIM" == "3" ]; then
+                TARGET_PLY="cave_scene.ply"
+            elif [ "$MAP_SECIM" == "2" ]; then
+                TARGET_PLY="drone_scene.ply"
+            else
+                TARGET_PLY="gaussian_scene.ply"
+            fi
+            
+            if [ -f "$TARGET_PLY" ]; then
+                python3 gaussian_renderer.py "$TARGET_PLY"
+            else
+                echo -e "${RED}❌ Hata: $TARGET_PLY bulunamadı! Önce haritalama yapmalısınız.${NC}"
+            fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
         4)
