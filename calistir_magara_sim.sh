@@ -20,7 +20,8 @@ export vblank_mode=0
 # Gazebo Transport Yerel İletişim Değişkenleri
 export GZ_IP=127.0.0.1
 export GZ_PARTITION=default
-export GZ_SIM_RESOURCE_PATH="$DIR/gazebo_cave_world/worlds/models:$GZ_SIM_RESOURCE_PATH"
+export GZ_SIM_RESOURCE_PATH="$DIR/gazebo_cave_world/worlds/models:$HOME/ardupilot_gazebo/models:$HOME/ardupilot_gazebo/worlds:$GZ_SIM_RESOURCE_PATH"
+export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/ardupilot_gazebo/build:$GZ_SIM_SYSTEM_PLUGIN_PATH"
 
 HEADLESS_FLAG="-s"
 WORLD_FILE="$DIR/gazebo_cave_world/worlds/large_mine_3dgs.sdf"
@@ -50,9 +51,11 @@ echo ""
 
 # Eski takılı kalmış simülasyon süreçlerini temizle
 killall -9 gz sim 2>/dev/null || true
-pkill -f "cave_drone_capture.py" 2>/dev/null || true
+pkill -f "ardupilot_drone_capture.py" 2>/dev/null || true
+pkill -f "sim_vehicle.py" 2>/dev/null || true
+pkill -f "arducopter" 2>/dev/null || true
 
-echo " [1/2] Gazebo Sim Dünyası Başlatılıyor..."
+echo " [1/3] Gazebo Sim Dünyası Başlatılıyor..."
 if which gz > /dev/null; then
     gz sim $HEADLESS_FLAG -r "$WORLD_FILE" &
     GZ_PID=$!
@@ -61,14 +64,22 @@ else
     exit 1
 fi
 
-# Güvenli kapanış için trap
-trap "kill $GZ_PID 2>/dev/null || true; killall -9 gz sim 2>/dev/null || true" EXIT INT TERM
+sleep 2
 
-echo " [2/2] Canlı FPV Kokpiti & MASt3R-3DGS Haritalama Başlatılıyor..."
-sleep 3.5
-# Yalnızca Python (OpenCV) için X11 zorlamasını kullanarak çalıştır
-QT_QPA_PLATFORM=xcb GDK_BACKEND=x11 python3 "$DIR/cave_drone_capture.py" 45
+echo " [2/3] ArduPilot SITL (Sanal Uçuş Bilgisayarı) Başlatılıyor..."
+# sim_vehicle.py scriptini sistem python'u ile çalıştır (venv içindeki eksiklikleri bypass eder)
+/usr/bin/python3 ~/ardupilot/Tools/autotest/sim_vehicle.py -v Copter -f gazebo-iris --model JSON --no-rebuild -I0 &
+SITL_PID=$!
 
-# Temizlik
-kill $GZ_PID 2>/dev/null || true
-killall -9 gz sim 2>/dev/null || true
+sleep 4
+
+echo " [3/3] Canlı FPV Kokpiti & MAVLink Kontrolcüsü Başlatılıyor..."
+# Wayland optimus cihazlarda Qt backend sorunları için çevre değişkenleri
+QT_QPA_PLATFORM=xcb GDK_BACKEND=x11 python3 ardupilot_drone_capture.py
+
+# Arayüz kapatıldığında (ESC basıldığında) arkada çalışan Gazebo ve SITL'yi temizle
+echo " Temizleniyor..."
+kill -9 $GZ_PID 2>/dev/null || true
+kill -9 $SITL_PID 2>/dev/null || true
+killall -9 arducopter 2>/dev/null || true
+echo " Görev tamamlandı."

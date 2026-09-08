@@ -169,58 +169,33 @@
     </model>
 
     <!-- ═══════════════════════════════════════════════════════════════
-         🚁 DARPA Maden Keşif Dronu
-             gravity=TRUE  → Yerçekimi aktif, duvara çarpınca düşer
-             VelocityControl → /cmd_vel ile yatay ve dikey hız kontrolü
+         🚁 DARPA Maden Keşif Dronu (ArduPilot Iris SITL Entegrasyonu)
          ═══════════════════════════════════════════════════════════════ -->
     <model name="cave_drone">
       <pose>0.0 0.0 2.0 0 0 0</pose>
-      <static>false</static>
-      <link name="base_link">
-        <!-- gravity etiketi YOK → world gravity (0,0,-9.8) devrede -->
+      
+      <!-- ArduPilot uyumlu fiziksel Quadcopter modelini içeri aktar -->
+      <include>
+        <name>iris_drone</name>
+        <uri>model://iris_with_ardupilot</uri>
+      </include>
+
+      <!-- Özel Sensörlerimiz (Kamera, Işık, Lidar) için Taşıyıcı Platform -->
+      <link name="sensor_payload">
+        <pose>0.1 0 0.05 0 0 0</pose>
         <inertial>
-          <mass>1.2</mass>
-          <inertia><ixx>0.03</ixx><iyy>0.03</iyy><izz>0.05</izz></inertia>
+          <mass>0.1</mass>
+          <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
         </inertial>
-
-        <visual name="body">
-          <geometry><box><size>0.4 0.4 0.12</size></box></geometry>
-          <material>
-            <ambient>0.1 0.1 0.12 1</ambient>
-            <diffuse>0.2 0.2 0.25 1</diffuse>
-          </material>
-        </visual>
-        <collision name="col">
-          <geometry><box><size>0.4 0.4 0.12</size></box></geometry>
-          <surface>
-            <friction><ode><mu>0.4</mu><mu2>0.4</mu2></ode></friction>
-            <!-- Çarpma anında hızı sıfırla (elastiklik yok) -->
-            <bounce>
-              <restitution_coefficient>0.0</restitution_coefficient>
-              <threshold>0.01</threshold>
-            </bounce>
-          </surface>
-        </collision>
-
-        <visual name="arm1">
-          <geometry><cylinder><radius>0.02</radius><length>0.5</length></cylinder></geometry>
-          <pose>0 0 0 0 1.57 0.785</pose>
-          <material><ambient>0.9 0.1 0.1 1</ambient></material>
-        </visual>
-        <visual name="arm2">
-          <geometry><cylinder><radius>0.02</radius><length>0.5</length></cylinder></geometry>
-          <pose>0 0 0 0 1.57 -0.785</pose>
-          <material><ambient>0.1 0.4 0.9 1</ambient></material>
-        </visual>
 
         <!-- Maden Keşif Feneri -->
         <light type="spot" name="drone_headlight">
-          <pose>0.25 0 0.05 0 0 0</pose>
-          <diffuse>0.40 0.40 0.42 1</diffuse>
-          <specular>0.05 0.05 0.05 1</specular>
+          <pose>0.15 0 0.0 0 0 0</pose>
+          <diffuse>0.60 0.60 0.62 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
           <attenuation>
             <range>40</range>
-            <constant>0.80</constant>
+            <constant>0.60</constant>
             <linear>0.04</linear>
             <quadratic>0.005</quadratic>
           </attenuation>
@@ -233,9 +208,9 @@
           <cast_shadows>false</cast_shadows>
         </light>
 
-        <!-- HD Kamera (Ufka Paralel, 150m Far Clip) -->
+        <!-- HD Kamera (MASt3R için) -->
         <sensor name="camera" type="camera">
-          <pose>0.25 0 0.05 0 0 0</pose>
+          <pose>0.15 0 0.0 0 0 0</pose>
           <camera>
             <horizontal_fov>1.396</horizontal_fov>
             <image>
@@ -253,24 +228,38 @@
           <visualize>true</visualize>
           <topic>camera</topic>
         </sensor>
+        
+        <!-- Çarpışma Önleyici 360 Derece Lidar (ArduPilot PRX) -->
+        <sensor name='gpu_lidar' type='gpu_lidar'>
+          <pose>0.0 0 0.1 0 0 0</pose>
+          <topic>lidar</topic>
+          <update_rate>15</update_rate>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>360</samples>
+                <resolution>1</resolution>
+                <min_angle>-3.14159265</min_angle>
+                <max_angle>3.14159265</max_angle>
+              </horizontal>
+            </scan>
+            <range>
+              <min>0.15</min>
+              <max>15.0</max>
+              <resolution>0.01</resolution>
+            </range>
+          </ray>
+          <always_on>1</always_on>
+          <visualize>false</visualize>
+        </sensor>
       </link>
 
-      <!-- Hız Kontrol Eklentisi -->
-      <plugin
-        filename="gz-sim-velocity-control-system"
-        name="gz::sim::systems::VelocityControl">
-        <initial_linear>0 0 0</initial_linear>
-        <initial_angular>0 0 0</initial_angular>
-        <topic>/cmd_vel</topic>
-      </plugin>
+      <!-- Sensörleri Drona Sabitleyen Eklem -->
+      <joint name="payload_joint" type="fixed">
+        <parent>iris_drone::iris_with_standoffs::base_link</parent>
+        <child>sensor_payload</child>
+      </joint>
 
-      <!-- Odometri Yayini -->
-      <plugin
-        filename="gz-sim-odometry-publisher-system"
-        name="gz::sim::systems::OdometryPublisher">
-        <odom_topic>/model/cave_drone/odometry</odom_topic>
-        <dimensions>3</dimensions>
-      </plugin>
     </model>
 
   </world>
