@@ -50,7 +50,7 @@ def send_teleop_cmd(vx, vy, vz, wy=0.0, wz=0.0):
             pass
 
 def run_cave_capture(target_keyframes=45):
-    global autopilot_mode
+    global autopilot_mode, ap_vx, ap_vy, ap_vz, ap_yaw_rate, master_mavlink
     print('=' * 70)
     print(' 🦇 DARPA SUBT MAGARA KESIF DRONU & 3DGS HARITALAMA')
     print(' 💡 [W/A/S/D / Ok Tuslari] : Ucus & Yon | [Q-E] : Donus')
@@ -113,8 +113,8 @@ def run_cave_capture(target_keyframes=45):
     
     try:
         from pymavlink import mavutil
-        print(" 🔌 ArduPilot SITL aranıyor (udp:127.0.0.1:14550)...")
-        master_mavlink = mavutil.mavlink_connection('udp:127.0.0.1:14550')
+        print(" 🔌 ArduPilot SITL aranıyor (tcp:127.0.0.1:5760)...")
+        master_mavlink = mavutil.mavlink_connection('tcp:127.0.0.1:5760')
         master_mavlink.wait_heartbeat(timeout=10)
         if master_mavlink.target_system == 0:
             print("❌ MAVLink Zaman Aşımı! ArduPilot çalışmıyor olabilir.")
@@ -154,7 +154,6 @@ def run_cave_capture(target_keyframes=45):
                         0b010111000111, 0, 0, 0, ned_vx, ned_vy, ned_vz, 0, 0, 0, 0, ned_yw)
                     time.sleep(0.05)
 
-            import threading
             t = threading.Thread(target=mavlink_thread, daemon=True)
             t.start()
             print(" 📡 MAVLink Kontrol Döngüsü Başlatıldı.")
@@ -446,7 +445,6 @@ def run_cave_capture(target_keyframes=45):
         cur_wz = 0.40 * cur_wz + 0.60 * target_wz
         
         # MAVLink değişkenlerini güncelle
-        global ap_vx, ap_vy, ap_vz, ap_yaw_rate
         ap_vx = cur_vx
         ap_vy = cur_vy
         ap_vz = cur_vz

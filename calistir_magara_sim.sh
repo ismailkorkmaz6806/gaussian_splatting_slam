@@ -67,8 +67,8 @@ fi
 sleep 2
 
 echo " [2/3] ArduPilot SITL (Sanal Uçuş Bilgisayarı) Başlatılıyor..."
-# sim_vehicle.py scriptini sistem python'u ile çalıştır (venv içindeki eksiklikleri bypass eder)
-/usr/bin/python3 ~/ardupilot/Tools/autotest/sim_vehicle.py -v Copter -f gazebo-iris --model JSON --no-rebuild -I0 &
+# sim_vehicle.py ile ardupilot'u JSON model üzerinden Gazebo'ya bağla
+python3 ~/ardupilot/Tools/autotest/sim_vehicle.py -v Copter -f gazebo-iris --model JSON --no-mavproxy --no-rebuild -I0 &
 SITL_PID=$!
 
 sleep 4

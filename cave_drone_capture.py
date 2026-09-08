@@ -21,12 +21,19 @@ try:
     from gz.msgs10.twist_pb2 import Twist
     from gz.msgs10.image_pb2 import Image as GzImage
     from gz.msgs10.odometry_pb2 import Odometry
+    from gz.msgs10.laserscan_pb2 import LaserScan
     _gz_node = Node()
     _gz_pub_vel = _gz_node.advertise('/cmd_vel', Twist)
     HAS_GAZEBO_CONTROL = True
 except Exception as e:
     HAS_GAZEBO_CONTROL = False
     print('Gazebo transport uyarisi:', e)
+
+# Otopilot & LIDAR Durum Değişkenleri
+autopilot_mode = False  # Otomatik Tarama modu
+lidar_min_front = 10.0
+lidar_min_left = 10.0
+lidar_min_right = 10.0
 
 def send_teleop_cmd(vx, vy, vz, wy=0.0, wz=0.0):
     if HAS_GAZEBO_CONTROL:
@@ -43,6 +50,7 @@ def send_teleop_cmd(vx, vy, vz, wy=0.0, wz=0.0):
             pass
 
 def run_cave_capture(target_keyframes=45):
+    global autopilot_mode
     print('=' * 70)
     print(' 🦇 DARPA SUBT MAGARA KESIF DRONU & 3DGS HARITALAMA')
     print(' 💡 [W/A/S/D / Ok Tuslari] : Ucus & Yon | [Q-E] : Donus')
@@ -98,14 +106,31 @@ def run_cave_capture(target_keyframes=45):
         except Exception:
             pass
 
+    def _on_lidar(msg):
+        global lidar_min_front, lidar_min_left, lidar_min_right
+        try:
+            ranges = msg.ranges
+            if len(ranges) > 0:
+                # 360 örnek = her biri 1 derece. Ortası (180. index) = Ön.
+                n = len(ranges)
+                mid = n // 2
+                
+                # Sonsuz/Sıfır filtreleme (Sensör menzili dışı)
+                def get_min(arr):
+                    valid = [r for r in arr if 0.1 < r < 14.9]
+                    return min(valid) if valid else 15.0
+
+                lidar_min_front = get_min(ranges[mid-25 : mid+25])  # -25 / +25 derece ön
+                lidar_min_left  = get_min(ranges[mid+30 : mid+100]) # Sol yan
+                lidar_min_right = get_min(ranges[mid-100 : mid-30]) # Sağ yan
+        except Exception:
+            pass
+
     if HAS_GAZEBO_CONTROL:
         # ✅ TEK topic aboneliği – SDF'deki <topic>camera</topic> etiketi
-        # Gazebo Harmonic gz-transport'ta bu /camera olarak yayınlanır.
-        # /camera/image fallback KALDIRILDI: çift subscription race condition'a yol açıyordu +
-        # gz-transport'un saniyede bir gönderdiği topic-stats paketi _on_img'i bypass etse de
-        # iki farklı subscription aynı callback'e bağlıyken lock rekabeti yaşanıyordu.
         _gz_node.subscribe(GzImage,   '/camera',                    _on_img)
         _gz_node.subscribe(Odometry,  '/model/cave_drone/odometry', _on_odom)
+        _gz_node.subscribe(LaserScan, '/lidar',                     _on_lidar)
 
     print(' ⏳ Gazebo /camera akisi bekleniyor...')
     t_start = time.time()
@@ -204,6 +229,21 @@ def run_cave_capture(target_keyframes=45):
             cv2.putText(display_frame, 'DARPA SUBT MAGARA KOKPITI [CANLI]',
                         (56, 35), cv2.FONT_HERSHEY_DUPLEX, 0.75, (0, 255, 180), 2)
 
+        # Otopilot ve Lidar HUD Uyarısı
+        ap_str = '[P] OTOPILOT: AKTIF' if autopilot_mode else '[P] OTOPILOT: KAPALI'
+        if lidar_min_front < 1.2:
+            lidar_str = '⚠️ LIDAR: ENGELE COK YAKIN!'
+            lidar_color = (0, 0, 255) # Kırmızı
+        elif lidar_min_front < 2.5:
+            lidar_str = 'LIDAR: Engel Yaklasiyor'
+            lidar_color = (0, 140, 255) # Turuncu
+        else:
+            lidar_str = 'LIDAR: Temiz'
+            lidar_color = (0, 255, 120) # Yeşil
+            
+        cv2.putText(display_frame, f'{ap_str}  |  {lidar_str}', (w - 600, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, lidar_color, 2)
+
         telemetry_str = (f'X:{drone_pose[0]:.1f}m  Y:{drone_pose[1]:.1f}m  '
                          f'Z:{drone_pose[2]:.1f}m  |  Egim:{current_pitch:+.1f} deg')
         cv2.putText(display_frame, telemetry_str, (w - 480, 35),
@@ -223,7 +263,7 @@ def run_cave_capture(target_keyframes=45):
                     (w - 600, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 220, 255), 1)
 
         if show_help:
-            card_w, card_h = 370, 310
+            card_w, card_h = 370, 340
             card_x1 = w - card_w - 18
             card_y1 = 62
             card_x2 = card_x1 + card_w
@@ -252,15 +292,17 @@ def run_cave_capture(target_keyframes=45):
             cv2.putText(display_frame, 'X                      : Havada Sabit Kal (Hover)',
                         (card_x1 + 18, card_y1 + 174), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (220, 235, 245), 1)
 
-            cv2.putText(display_frame, '[ FENER & HARITALAMA ]',
+            cv2.putText(display_frame, '[ FENER, OTOPILOT & HARITALAMA ]',
                         (card_x1 + 12, card_y1 + 206), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 255, 160), 1)
             fener_label = 'KAPAT' if headlight_on else 'AC'
             cv2.putText(display_frame, f'L   : Feneri {fener_label} (toggle)',
                         (card_x1 + 18, card_y1 + 232), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 235, 80), 1)
+            cv2.putText(display_frame, 'P   : Otopilot (Otomatik Tarama Ucusu)',
+                        (card_x1 + 18, card_y1 + 258), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
             cv2.putText(display_frame, 'R   : 3DGS Taramayi Baslat / Bitir',
-                        (card_x1 + 18, card_y1 + 258), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 240, 255), 1)
+                        (card_x1 + 18, card_y1 + 284), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 240, 255), 1)
             cv2.putText(display_frame, 'ESC : Programdan Cikis',
-                        (card_x1 + 18, card_y1 + 284), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 220, 240), 1)
+                        (card_x1 + 18, card_y1 + 310), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 220, 240), 1)
 
         cv2.imshow(win_name, display_frame)
 
@@ -329,21 +371,49 @@ def run_cave_capture(target_keyframes=45):
             toggle_headlight(headlight_on)
             state_msg = 'ACILDI' if headlight_on else 'KAPATILDI'
             print(f'💡 Fener {state_msg}.')
+        elif key_ascii in (ord('p'), ord('P')):
+            autopilot_mode = not autopilot_mode
+            state_msg = 'AKTIF (Otomatik Tarama)' if autopilot_mode else 'KAPALI'
+            print(f'🤖 Otopilot {state_msg}.')
+            cmd_received = True
 
         if cmd_received:
             last_cmd_time = time.time()
-        elif time.time() - last_cmd_time > 0.30:
-            target_vx *= 0.70
-            target_vy *= 0.70
-            target_vz *= 0.70
-            target_wz *= 0.70
+        else:
+            # ✅ DJI Tarzı Otomatik Havada Kalma (Auto-Hover)
+            target_vx *= 0.10
+            target_vy *= 0.10
+            target_vz *= 0.10
+            target_wz *= 0.10
 
-        cur_vx = 0.60 * cur_vx + 0.40 * target_vx
-        cur_vy = 0.60 * cur_vy + 0.40 * target_vy
-        cur_vz = 0.60 * cur_vz + 0.40 * target_vz
-        cur_wz = 0.60 * cur_wz + 0.40 * target_wz
+        # ✅ OTOPİLOT VE ÇARPIŞMA ÖNLEYİCİ (Collision Avoidance)
+        if autopilot_mode:
+            # Sabit Haritalama Uçuşu (0.8 m/s)
+            target_vx = 0.8
+            target_vy = 0.0
+            target_vz = 0.0
+            target_wz = 0.0
+            
+            # Duvarlardan Uzaklaşma (Tünel Ortalama)
+            if lidar_min_left < 2.0:
+                target_vy = -0.5
+            elif lidar_min_right < 2.0:
+                target_vy = 0.5
+                
+        # Manuel veya Otopilot fark etmez, Önde engel varsa DUR
+        if target_vx > 0 and lidar_min_front < 1.2:
+            target_vx = 0.0  # İleri gitmeyi engelle
+            if autopilot_mode:
+                autopilot_mode = False
+                print('⚠️ LİDAR UYARISI: Önde engel var, Otopilot durduruldu!')
 
-        if time.time() - last_vel_send >= 0.065:
+        # Yumuşak ivmelenme, ama sert frenleme
+        cur_vx = 0.40 * cur_vx + 0.60 * target_vx
+        cur_vy = 0.40 * cur_vy + 0.60 * target_vy
+        cur_vz = 0.40 * cur_vz + 0.60 * target_vz
+        cur_wz = 0.40 * cur_wz + 0.60 * target_wz
+
+        if time.time() - last_vel_send >= 0.050:
             send_teleop_cmd(cur_vx, cur_vy, cur_vz, 0.0, cur_wz)
             last_vel_send = time.time()
 
