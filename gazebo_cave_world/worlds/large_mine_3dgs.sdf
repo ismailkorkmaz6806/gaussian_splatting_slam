@@ -10,6 +10,15 @@
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
 
+    <!-- 🎥 Gazebo Başlangıç Kamerası (Doğrudan Holybro X500 Dronuna Bakar) -->
+    <gui fullscreen='0'>
+      <camera name='user_camera'>
+        <pose>-4.5 0.0 0.3 0 0.15 0</pose>
+        <view_controller>orbit</view_controller>
+      </camera>
+    </gui>
+
+
     <!-- Yeraltı Maden Ambiyansı -->
     <scene>
       <ambient>0.18 0.17 0.15 1.0</ambient>
@@ -169,83 +178,233 @@
     </model>
 
     <!-- ═══════════════════════════════════════════════════════════════
-         🚁 DARPA Maden Keşif Dronu (ArduPilot Iris SITL Entegrasyonu)
+         🚁 DARPA Maden Keşif Dronu (3B Model + Takip Kamerası + Lidar)
          ═══════════════════════════════════════════════════════════════ -->
+    <!-- 🚁 Holybro X500 Quadcopter Dron Kiti (Pixhawk + Intel RealSense D435 + RPLIDAR A2) -->
     <model name="cave_drone">
-      <pose>0.0 0.0 2.0 0 0 0</pose>
-      
-      <!-- ArduPilot uyumlu fiziksel Quadcopter modelini içeri aktar -->
-      <include>
-        <name>iris_drone</name>
-        <uri>model://iris_with_ardupilot</uri>
-      </include>
-
-      <!-- Özel Sensörlerimiz (Kamera, Işık, Lidar) için Taşıyıcı Platform -->
-      <link name="sensor_payload">
-        <pose>0.1 0 0.05 0 0 0</pose>
+      <pose>-2.0 0.0 -0.63 0 0 0</pose>
+      <static>false</static>
+      <link name="base_link">
+        <gravity>false</gravity>
         <inertial>
-          <mass>0.1</mass>
-          <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
+          <mass>1.8</mass>
+          <inertia><ixx>0.045</ixx><iyy>0.045</iyy><izz>0.075</izz></inertia>
         </inertial>
 
-        <!-- Maden Keşif Feneri -->
+        <!-- ==================== 1. ŞASİ PLAKALARI (Karbon Fiber) ==================== -->
+        <!-- Alt Gövde Plakası (Alt Şasi) -->
+        <visual name="chassis_bottom">
+          <geometry><box><size>0.18 0.18 0.003</size></box></geometry>
+          <pose>0 0 0 0 0 0</pose>
+          <material><ambient>0.08 0.08 0.09 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse><specular>0.6 0.6 0.6 1</specular></material>
+        </visual>
+        <!-- Orta Elektronik Plakası -->
+        <visual name="chassis_mid">
+          <geometry><box><size>0.16 0.16 0.003</size></box></geometry>
+          <pose>0 0 0.04 0 0 0</pose>
+          <material><ambient>0.08 0.08 0.09 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse><specular>0.6 0.6 0.6 1</specular></material>
+        </visual>
+        <!-- Üst Koruma & Sensör Rafı (Lidar Rafı) -->
+        <visual name="chassis_top">
+          <geometry><box><size>0.13 0.13 0.003</size></box></geometry>
+          <pose>0 0 0.08 0 0 0</pose>
+          <material><ambient>0.08 0.08 0.09 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse><specular>0.6 0.6 0.6 1</specular></material>
+        </visual>
+        <!-- Alüminyum Şasi Ara Kolonları (Standoffs) -->
+        <visual name="standoff_fl"><geometry><cylinder><radius>0.003</radius><length>0.08</length></cylinder></geometry><pose>0.06 0.06 0.04 0 0 0</pose><material><ambient>0.7 0.7 0.75 1</ambient><diffuse>0.85 0.85 0.9 1</diffuse></material></visual>
+        <visual name="standoff_fr"><geometry><cylinder><radius>0.003</radius><length>0.08</length></cylinder></geometry><pose>0.06 -0.06 0.04 0 0 0</pose><material><ambient>0.7 0.7 0.75 1</ambient><diffuse>0.85 0.85 0.9 1</diffuse></material></visual>
+        <visual name="standoff_rl"><geometry><cylinder><radius>0.003</radius><length>0.08</length></cylinder></geometry><pose>-0.06 0.06 0.04 0 0 0</pose><material><ambient>0.7 0.7 0.75 1</ambient><diffuse>0.85 0.85 0.9 1</diffuse></material></visual>
+        <visual name="standoff_rr"><geometry><cylinder><radius>0.003</radius><length>0.08</length></cylinder></geometry><pose>-0.06 -0.06 0.04 0 0 0</pose><material><ambient>0.7 0.7 0.75 1</ambient><diffuse>0.85 0.85 0.9 1</diffuse></material></visual>
+
+        <!-- ==================== 2. PİXHAWK UÇUŞ BİLGİSAYARI ==================== -->
+        <!-- Pixhawk Alüminyum Gövde -->
+        <visual name="pixhawk_body">
+          <geometry><box><size>0.082 0.046 0.020</size></box></geometry>
+          <pose>0 0 0.052 0 0 0</pose>
+          <material><ambient>0.05 0.05 0.06 1</ambient><diffuse>0.10 0.10 0.12 1</diffuse><specular>0.9 0.9 0.95 1</specular></material>
+        </visual>
+        <!-- Pixhawk Beyaz Yön Oku / Logo Çizgisi -->
+        <visual name="pixhawk_logo">
+          <geometry><box><size>0.035 0.016 0.002</size></box></geometry>
+          <pose>0.015 0 0.063 0 0 0</pose>
+          <material><ambient>0.9 0.9 0.9 1</ambient><diffuse>1 1 1 1</diffuse></material>
+        </visual>
+        <!-- Pixhawk RGB Çok Renkli Durum Işığı -->
+        <visual name="pixhawk_led">
+          <geometry><box><size>0.008 0.008 0.002</size></box></geometry>
+          <pose>-0.025 0 0.063 0 0 0</pose>
+          <material><ambient>0 1 0.8 1</ambient><diffuse>0 1 0.8 1</diffuse><emissive>0 1 0.8 1</emissive></material>
+        </visual>
+
+        <!-- ==================== 3. INTEL REALSENSE D435 DERİNLİK KAMERASI ==================== -->
+        <!-- RealSense Alüminyum Gövdesi (Ön Burun Montajı) -->
+        <visual name="realsense_body">
+          <geometry><box><size>0.025 0.090 0.025</size></box></geometry>
+          <pose>0.115 0 0.008 0 0.15 0</pose>
+          <material><ambient>0.75 0.75 0.80 1</ambient><diffuse>0.85 0.85 0.90 1</diffuse><specular>1 1 1 1</specular></material>
+        </visual>
+        <!-- RealSense Ön Optik Cam Paneli -->
+        <visual name="realsense_glass">
+          <geometry><box><size>0.003 0.086 0.020</size></box></geometry>
+          <pose>0.128 0 0.006 0 0.15 0</pose>
+          <material><ambient>0.02 0.05 0.15 1</ambient><diffuse>0.05 0.10 0.25 1</diffuse><specular>1 1 1 1</specular></material>
+        </visual>
+        <!-- RealSense Lensi 1 (Sol IR) -->
+        <visual name="realsense_ir1"><geometry><cylinder><radius>0.004</radius><length>0.005</length></cylinder></geometry><pose>0.129 0.032 0.006 0 1.72 0</pose><material><ambient>0.1 0.3 0.7 1</ambient><diffuse>0.2 0.5 1 1</diffuse></material></visual>
+        <!-- RealSense Lensi 2 (Orta RGB) -->
+        <visual name="realsense_rgb"><geometry><cylinder><radius>0.004</radius><length>0.005</length></cylinder></geometry><pose>0.129 0.000 0.006 0 1.72 0</pose><material><ambient>0.1 0.6 0.2 1</ambient><diffuse>0.2 0.9 0.3 1</diffuse></material></visual>
+        <!-- RealSense Lensi 3 (Sağ IR) -->
+        <visual name="realsense_ir2"><geometry><cylinder><radius>0.004</radius><length>0.005</length></cylinder></geometry><pose>0.129 -0.032 0.006 0 1.72 0</pose><material><ambient>0.1 0.3 0.7 1</ambient><diffuse>0.2 0.5 1 1</diffuse></material></visual>
+
+        <!-- ==================== 4. RPLIDAR A2 / S2 360° LAZER TARAYICI ==================== -->
+        <!-- Lidar Sabit Taban Silindiri (Üst Raf Üzerinde) -->
+        <visual name="rplidar_base">
+          <geometry><cylinder><radius>0.038</radius><length>0.024</length></cylinder></geometry>
+          <pose>0 0 0.095 0 0 0</pose>
+          <material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse></material>
+        </visual>
+        <!-- Lidar Döner Başlık Silindiri (Turret Puck) -->
+        <visual name="rplidar_puck">
+          <geometry><cylinder><radius>0.034</radius><length>0.020</length></cylinder></geometry>
+          <pose>0 0 0.116 0 0 0</pose>
+          <material><ambient>0.04 0.04 0.05 1</ambient><diffuse>0.08 0.08 0.10 1</diffuse><specular>0.8 0.8 0.8 1</specular></material>
+        </visual>
+        <!-- Lidar Kırmızı Optik Lazer Çizgisi -->
+        <visual name="rplidar_slit">
+          <geometry><box><size>0.008 0.066 0.004</size></box></geometry>
+          <pose>0 0 0.116 0 0 0</pose>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0.1 0.1 1</diffuse><emissive>0.8 0 0 1</emissive></material>
+        </visual>
+
+        <!-- ==================== 5. HOLYBRO 4S/6S LIPO BATARYA ==================== -->
+        <visual name="lipo_battery">
+          <geometry><box><size>0.138 0.050 0.038</size></box></geometry>
+          <pose>-0.01 0 -0.025 0 0 0</pose>
+          <material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.12 0.12 0.15 1</diffuse></material>
+        </visual>
+        <!-- Sarı Cırt Bantlar (Holybro Velcro Straps) -->
+        <visual name="lipo_strap_1">
+          <geometry><box><size>0.024 0.054 0.042</size></box></geometry>
+          <pose>0.028 0 -0.025 0 0 0</pose>
+          <material><ambient>0.95 0.80 0.05 1</ambient><diffuse>1.0 0.85 0.1 1</diffuse></material>
+        </visual>
+        <visual name="lipo_strap_2">
+          <geometry><box><size>0.024 0.054 0.042</size></box></geometry>
+          <pose>-0.048 0 -0.025 0 0 0</pose>
+          <material><ambient>0.95 0.80 0.05 1</ambient><diffuse>1.0 0.85 0.1 1</diffuse></material>
+        </visual>
+
+        <!-- ==================== 6. 4 ADET X500 KARBON MOTOR KOLU (500mm Wheelbase) ==================== -->
+        <!-- Kol Boruları (16mm Karbon Boru, 45 Derece X-Quad) -->
+        <visual name="arm_fl"><geometry><cylinder><radius>0.008</radius><length>0.24</length></cylinder></geometry><pose>0.09 0.09 0.0 0 1.5708 0.785</pose><material><ambient>0.07 0.07 0.08 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse></material></visual>
+        <visual name="arm_fr"><geometry><cylinder><radius>0.008</radius><length>0.24</length></cylinder></geometry><pose>0.09 -0.09 0.0 0 1.5708 -0.785</pose><material><ambient>0.07 0.07 0.08 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse></material></visual>
+        <visual name="arm_rl"><geometry><cylinder><radius>0.008</radius><length>0.24</length></cylinder></geometry><pose>-0.09 0.09 0.0 0 1.5708 -0.785</pose><material><ambient>0.07 0.07 0.08 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse></material></visual>
+        <visual name="arm_rr"><geometry><cylinder><radius>0.008</radius><length>0.24</length></cylinder></geometry><pose>-0.09 -0.09 0.0 0 1.5708 0.785</pose><material><ambient>0.07 0.07 0.08 1</ambient><diffuse>0.12 0.12 0.14 1</diffuse></material></visual>
+
+        <!-- Motor Bağlantı Tabanları (Kol Uçları) -->
+        <visual name="mount_fl"><geometry><box><size>0.036 0.034 0.016</size></box></geometry><pose>0.18 0.18 0.004 0 0 0.785</pose><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="mount_fr"><geometry><box><size>0.036 0.034 0.016</size></box></geometry><pose>0.18 -0.18 0.004 0 0 -0.785</pose><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="mount_rl"><geometry><box><size>0.036 0.034 0.016</size></box></geometry><pose>-0.18 0.18 0.004 0 0 -0.785</pose><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+        <visual name="mount_rr"><geometry><box><size>0.036 0.034 0.016</size></box></geometry><pose>-0.18 -0.18 0.004 0 0 0.785</pose><material><ambient>0.1 0.1 0.1 1</ambient></material></visual>
+
+        <!-- ==================== 7. 4 ADET FIRÇASIZ MOTOR (Holybro 2216) ==================== -->
+        <visual name="motor_fl"><geometry><cylinder><radius>0.015</radius><length>0.026</length></cylinder></geometry><pose>0.18 0.18 0.022 0 0 0</pose><material><ambient>0.3 0.3 0.35 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse><specular>1 1 1 1</specular></material></visual>
+        <visual name="motor_fr"><geometry><cylinder><radius>0.015</radius><length>0.026</length></cylinder></geometry><pose>0.18 -0.18 0.022 0 0 0</pose><material><ambient>0.3 0.3 0.35 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse><specular>1 1 1 1</specular></material></visual>
+        <visual name="motor_rl"><geometry><cylinder><radius>0.015</radius><length>0.026</length></cylinder></geometry><pose>-0.18 0.18 0.022 0 0 0</pose><material><ambient>0.3 0.3 0.35 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse><specular>1 1 1 1</specular></material></visual>
+        <visual name="motor_rr"><geometry><cylinder><radius>0.015</radius><length>0.026</length></cylinder></geometry><pose>-0.18 -0.18 0.022 0 0 0</pose><material><ambient>0.3 0.3 0.35 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse><specular>1 1 1 1</specular></material></visual>
+
+        <!-- ==================== 8. 4 ADET 10-İNÇ PERVANE & MOTION BLUR ROTOR DİSKLERİ ==================== -->
+        <!-- Ön Sol Dönen Rotor Diski (Motion Blur) & Pervane -->
+        <visual name="prop_disc_fl"><geometry><cylinder><radius>0.125</radius><length>0.003</length></cylinder></geometry><pose>0.18 0.18 0.038 0 0 0</pose><material><ambient>0.8 0.2 0.1 0.45</ambient><diffuse>1.0 0.25 0.15 0.55</diffuse><specular>0.6 0.6 0.6 0.8</specular></material></visual>
+        <visual name="prop_blade_fl"><geometry><box><size>0.24 0.022 0.004</size></box></geometry><pose>0.18 0.18 0.039 0 0 0.52</pose><material><ambient>0.9 0.2 0.1 0.9</ambient><diffuse>1.0 0.25 0.15 0.95</diffuse></material></visual>
+
+        <!-- Ön Sağ Dönen Rotor Diski (Motion Blur) & Pervane -->
+        <visual name="prop_disc_fr"><geometry><cylinder><radius>0.125</radius><length>0.003</length></cylinder></geometry><pose>0.18 -0.18 0.038 0 0 0</pose><material><ambient>0.8 0.2 0.1 0.45</ambient><diffuse>1.0 0.25 0.15 0.55</diffuse><specular>0.6 0.6 0.6 0.8</specular></material></visual>
+        <visual name="prop_blade_fr"><geometry><box><size>0.24 0.022 0.004</size></box></geometry><pose>0.18 -0.18 0.039 0 0 -0.52</pose><material><ambient>0.9 0.2 0.1 0.9</ambient><diffuse>1.0 0.25 0.15 0.95</diffuse></material></visual>
+
+        <!-- Arka Sol Dönen Rotor Diski (Motion Blur) & Pervane -->
+        <visual name="prop_disc_rl"><geometry><cylinder><radius>0.125</radius><length>0.003</length></cylinder></geometry><pose>-0.18 0.18 0.038 0 0 0</pose><material><ambient>0.15 0.35 0.7 0.45</ambient><diffuse>0.2 0.5 0.9 0.55</diffuse><specular>0.6 0.6 0.6 0.8</specular></material></visual>
+        <visual name="prop_blade_rl"><geometry><box><size>0.24 0.022 0.004</size></box></geometry><pose>-0.18 0.18 0.039 0 0 -0.52</pose><material><ambient>0.1 0.1 0.12 0.9</ambient><diffuse>0.18 0.18 0.2 0.95</diffuse></material></visual>
+
+        <!-- Arka Sağ Dönen Rotor Diski (Motion Blur) & Pervane -->
+        <visual name="prop_disc_rr"><geometry><cylinder><radius>0.125</radius><length>0.003</length></cylinder></geometry><pose>-0.18 -0.18 0.038 0 0 0</pose><material><ambient>0.15 0.35 0.7 0.45</ambient><diffuse>0.2 0.5 0.9 0.55</diffuse><specular>0.6 0.6 0.6 0.8</specular></material></visual>
+        <visual name="prop_blade_rr"><geometry><box><size>0.24 0.022 0.004</size></box></geometry><pose>-0.18 -0.18 0.039 0 0 0.52</pose><material><ambient>0.1 0.1 0.12 0.9</ambient><diffuse>0.18 0.18 0.2 0.95</diffuse></material></visual>
+
+        <!-- ==================== 9. HOLYBRO X500 T-TİPİ KARBON İNİŞ TAKIMLARI ==================== -->
+        <!-- Sol İniş Bacakları (Açılı Borular) -->
+        <visual name="leg_fl"><geometry><cylinder><radius>0.006</radius><length>0.18</length></cylinder></geometry><pose>0.06 0.08 -0.08 0.22 0 0</pose><material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.1 0.1 0.12 1</diffuse></material></visual>
+        <visual name="leg_rl"><geometry><cylinder><radius>0.006</radius><length>0.18</length></cylinder></geometry><pose>-0.06 0.08 -0.08 0.22 0 0</pose><material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.1 0.1 0.12 1</diffuse></material></visual>
+        <!-- Sağ İniş Bacakları (Açılı Borular) -->
+        <visual name="leg_fr"><geometry><cylinder><radius>0.006</radius><length>0.18</length></cylinder></geometry><pose>0.06 -0.08 -0.08 -0.22 0 0</pose><material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.1 0.1 0.12 1</diffuse></material></visual>
+        <visual name="leg_rr"><geometry><cylinder><radius>0.006</radius><length>0.18</length></cylinder></geometry><pose>-0.06 -0.08 -0.08 -0.22 0 0</pose><material><ambient>0.06 0.06 0.07 1</ambient><diffuse>0.1 0.1 0.12 1</diffuse></material></visual>
+
+        <!-- Sol ve Sağ Yatay Zemin Kayak Boruları (Landing Skids) -->
+        <visual name="skid_l"><geometry><cylinder><radius>0.006</radius><length>0.28</length></cylinder></geometry><pose>0 0.105 -0.165 1.5708 0 0</pose><material><ambient>0.08 0.08 0.09 1</ambient><diffuse>0.14 0.14 0.16 1</diffuse></material></visual>
+        <visual name="skid_r"><geometry><cylinder><radius>0.006</radius><length>0.28</length></cylinder></geometry><pose>0 -0.105 -0.165 1.5708 0 0</pose><material><ambient>0.08 0.08 0.09 1</ambient><diffuse>0.14 0.14 0.16 1</diffuse></material></visual>
+
+        <!-- İniş Ayağı Kauçuk Uçları (Rubber End Caps) -->
+        <visual name="skid_cap_fl"><geometry><cylinder><radius>0.009</radius><length>0.02</length></cylinder></geometry><pose>0.14 0.105 -0.165 1.5708 0 0</pose><material><ambient>0.02 0.02 0.02 1</ambient></material></visual>
+        <visual name="skid_cap_rl"><geometry><cylinder><radius>0.009</radius><length>0.02</length></cylinder></geometry><pose>-0.14 0.105 -0.165 1.5708 0 0</pose><material><ambient>0.02 0.02 0.02 1</ambient></material></visual>
+        <visual name="skid_cap_fr"><geometry><cylinder><radius>0.009</radius><length>0.02</length></cylinder></geometry><pose>0.14 -0.105 -0.165 1.5708 0 0</pose><material><ambient>0.02 0.02 0.02 1</ambient></material></visual>
+        <visual name="skid_cap_rr"><geometry><cylinder><radius>0.009</radius><length>0.02</length></cylinder></geometry><pose>-0.14 -0.105 -0.165 1.5708 0 0</pose><material><ambient>0.02 0.02 0.02 1</ambient></material></visual>
+
+        <!-- Çarpışma Kutusu -->
+        <collision name="col">
+          <geometry><box><size>0.48 0.48 0.32</size></box></geometry>
+          <pose>0 0 -0.02 0 0 0</pose>
+        </collision>
+
+        <!-- 💡 RealSense Üzeri Ön Keşif Feneri -->
         <light type="spot" name="drone_headlight">
-          <pose>0.15 0 0.0 0 0 0</pose>
-          <diffuse>0.60 0.60 0.62 1</diffuse>
-          <specular>0.1 0.1 0.1 1</specular>
+          <pose>0.14 0 0.01 0 0 0</pose>
+          <diffuse>0.90 0.90 0.92 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
           <attenuation>
-            <range>40</range>
-            <constant>0.60</constant>
-            <linear>0.04</linear>
-            <quadratic>0.005</quadratic>
+            <range>45</range>
+            <constant>0.50</constant>
+            <linear>0.02</linear>
+            <quadratic>0.002</quadratic>
           </attenuation>
           <spot>
             <inner_angle>1.10</inner_angle>
-            <outer_angle>1.60</outer_angle>
+            <outer_angle>1.65</outer_angle>
             <falloff>0.45</falloff>
           </spot>
           <direction>1 0 0</direction>
           <cast_shadows>false</cast_shadows>
         </light>
 
-        <!-- HD Kamera (MASt3R için) -->
+        <!-- 🎥 3. ŞAHIS HOLYBRO X500 TAKİP KAMERASI (Hafif, 60 FPS, 640x480) -->
         <sensor name="camera" type="camera">
-          <pose>0.15 0 0.0 0 0 0</pose>
+          <pose>-1.35 0 0.45 0 0.16 0</pose>
           <camera>
-            <horizontal_fov>1.396</horizontal_fov>
-            <image>
-              <width>800</width>
-              <height>600</height>
-              <format>R8G8B8</format>
-            </image>
-            <clip>
-              <near>0.05</near>
-              <far>150.0</far>
-            </clip>
+            <horizontal_fov>1.42</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>150.0</far></clip>
           </camera>
           <always_on>1</always_on>
           <update_rate>30</update_rate>
           <visualize>true</visualize>
           <topic>camera</topic>
         </sensor>
-        
-        <!-- Çarpışma Önleyici 360 Derece Lidar (ArduPilot PRX) -->
+
+        <!-- 📡 RPLIDAR A2 360 Derece Lazer Tarayıcı (Hafif, 10 Hz, 72 Örneklem) -->
         <sensor name='gpu_lidar' type='gpu_lidar'>
-          <pose>0.0 0 0.1 0 0 0</pose>
+          <pose>0.0 0 0.116 0 0 0</pose>
           <topic>lidar</topic>
-          <update_rate>15</update_rate>
+          <update_rate>10</update_rate>
           <ray>
             <scan>
               <horizontal>
-                <samples>360</samples>
+                <samples>72</samples>
                 <resolution>1</resolution>
                 <min_angle>-3.14159265</min_angle>
                 <max_angle>3.14159265</max_angle>
               </horizontal>
             </scan>
             <range>
-              <min>0.15</min>
-              <max>15.0</max>
+              <min>0.12</min>
+              <max>20.0</max>
               <resolution>0.01</resolution>
             </range>
           </ray>
@@ -254,13 +413,22 @@
         </sensor>
       </link>
 
-      <!-- Sensörleri Drona Sabitleyen Eklem -->
-      <joint name="payload_joint" type="fixed">
-        <parent>iris_drone::iris_with_standoffs::base_link</parent>
-        <child>sensor_payload</child>
-      </joint>
+      <!-- 🎮 Hız Kontrol Eklentisi (/cmd_vel) -->
+      <plugin
+        filename="gz-sim-velocity-control-system"
+        name="gz::sim::systems::VelocityControl">
+        <initial_linear>0 0 0</initial_linear>
+        <initial_angular>0 0 0</initial_angular>
+        <topic>/cmd_vel</topic>
+      </plugin>
 
+      <!-- 📍 Odometri Yayını (/model/cave_drone/odometry) -->
+      <plugin
+        filename="gz-sim-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <odom_topic>/model/cave_drone/odometry</odom_topic>
+        <dimensions>3</dimensions>
+      </plugin>
     </model>
-
   </world>
 </sdf>

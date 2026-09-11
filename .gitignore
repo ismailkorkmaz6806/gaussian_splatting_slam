@@ -29,3 +29,5 @@ desktop.ini
 .vscode/
 .idea/
 *.log
+scratch/
+test_commando8.py

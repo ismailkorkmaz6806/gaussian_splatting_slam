@@ -63,7 +63,8 @@ while true; do
             echo ""
             read -p "Seçiminiz [1-4]: " K_SECIM
             if [ "$K_SECIM" == "4" ]; then
-                ./calistir_magara_sim.sh
+                python3 dron_tunel_simulatoru.py
+
             elif [ "$K_SECIM" == "3" ]; then
                 python3 simulated_drone_streamer.py &
                 STREAM_PID=$!
@@ -159,8 +160,9 @@ while true; do
                     echo -e "${RED}❌ Hata: cave_scene.ply bulunamadı! Önce 1. seçenekle tarama yapmalısınız.${NC}"
                 fi
             else
-                ./calistir_magara_sim.sh
+                python3 dron_tunel_simulatoru.py
             fi
+
             read -p "Devam etmek için Enter'a basın..."
             ;;
         0)

@@ -83,34 +83,75 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     model = get_mast3r_model(device=device)
 
     # =========================================================================
-    # [ADIM 1 / 4] 🎬 Video Karelerini Tarama ve Eşit Aralıklı Keyframe Seçimi
+    # [ADIM 1 / 4] 🎬 Video Karelerini Akıllı Tarama (Hareket & Netlik Tabanlı Keyframe Seçimi)
     # =========================================================================
-    print("\n [1/4] 🎬 Video Kareleri Taranıyor ve Yüksek Çözünürlüklü Kareler Hazırlanıyor...")
+    print(f"\n [1/4] 🎬 Video Taranıyor: Hareket ve Netliğe Göre En İyi {num_keyframes} Keyframe Seçiliyor...")
     cap = cv2.VideoCapture(full_video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    print(f" 📊 Toplam Video Kare Sayısı: {total_frames}")
+
+    # Uzun videolarda (örn: 5000 kare) boşta bekleme veya bulanık kareleri eleyen akıllı seçim
+    raw_frames = []
+    prev_gray = None
+    step_skip = max(1, total_frames // 400)  # Hızlı ön tarama adımı
     
-    # Video boyunca eşit aralıklarla keyframe indisleri oluştur
-    frame_indices = np.linspace(0, total_frames - 1, num_keyframes, dtype=int)
-    frames = []
-
-    curr_frame_idx = 0
-    selected_idx = 0
-
-    # Videoyu kare kare oku ve belirlenen indislerdeki kareleri 512x512 tensör formatına dönüştür
-    while cap.isOpened() and selected_idx < len(frame_indices):
+    frame_idx = 0
+    candidate_indices = []
+    
+    while cap.isOpened() and frame_idx < total_frames:
         ret, frame = cap.read()
         if not ret:
             break
-        if curr_frame_idx == frame_indices[selected_idx]:
-            # prepare_frame_dict: Görüntüyü normalize eder, PyTorch tensörüne çevirir ve renkleri saklar
-            img_info = prepare_frame_dict(frame, idx=selected_idx, target_size=target_size, is_bgr=True)
+        
+        # Sadece belirli aralıklarla ön analiz yap
+        if frame_idx % step_skip == 0:
+            small_gray = cv2.cvtColor(cv2.resize(frame, (160, 120)), cv2.COLOR_BGR2GRAY)
+            # Netlik kontrolü (Laplacian varyansı)
+            sharpness = cv2.Laplacian(small_gray, cv2.CV_64F).var()
+            
+            # Hareket kontrolü
+            if prev_gray is None:
+                diff = 100.0
+            else:
+                diff = float(np.mean(cv2.absdiff(small_gray, prev_gray)))
+            
+            # Hareketsiz veya aşırı bulanık kareleri ele
+            if (diff > 4.0 or prev_gray is None) and sharpness > 15.0:
+                candidate_indices.append(frame_idx)
+                prev_gray = small_gray
+        
+        frame_idx += 1
+    
+    cap.release()
+
+    # Eğer akıllı filtreleme yeterli kare bulamadıysa güvenli linspace'e dön
+    if len(candidate_indices) < num_keyframes:
+        frame_indices = np.linspace(0, total_frames - 1, min(num_keyframes, max(total_frames, 1)), dtype=int)
+    else:
+        # Adaylar arasından eşit dağılımlı en kaliteli keyframe'leri seç
+        sel_idx = np.linspace(0, len(candidate_indices) - 1, num_keyframes, dtype=int)
+        frame_indices = [candidate_indices[i] for i in sel_idx]
+
+    # Seçilen keyframe'leri tam çözünürlükte tensöre dönüştür
+    frames = []
+    cap = cv2.VideoCapture(full_video_path)
+    selected_set = set(frame_indices)
+    curr_frame_idx = 0
+    loaded_count = 0
+    
+    while cap.isOpened() and loaded_count < len(frame_indices):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if curr_frame_idx in selected_set:
+            img_info = prepare_frame_dict(frame, idx=loaded_count, target_size=target_size, is_bgr=True)
             frames.append(img_info)
-            selected_idx += 1
-            sys.stdout.write(f"\r  -> Hazırlanan Keyframe: {selected_idx}/{len(frame_indices)}")
+            loaded_count += 1
+            sys.stdout.write(f"\r  -> Hazırlanan Akıllı Keyframe: {loaded_count}/{len(frame_indices)}")
             sys.stdout.flush()
         curr_frame_idx += 1
     cap.release()
-    print(f"\n ✅ {len(frames)} Keyframe Başarıyla Hazırlandı.")
+    print(f"\n ✅ {len(frames)} Yüksek Kaliteli Keyframe Başarıyla Hazırlandı (Çakışma Oranı İdeal).")
 
     # =========================================================================
     # [ADIM 2 / 4] 🧠 MASt3R Çıkarımı ve Kapalı Form SE(3) Kamera Yörüngesi
@@ -126,6 +167,11 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
 
     # MASt3R Yapay Zekasını GPU üzerinde çalıştır (Her kare çifti için 3B nokta haritası üretir)
     out = inference(pairs, model, device=device, batch_size=2, verbose=True)
+    del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    import gc
+    gc.collect()
 
     n_steps = N - 1
     cam_poses = [np.eye(4, dtype=np.float32)]  # İlk kamera başlangıç noktası (Birim matris)

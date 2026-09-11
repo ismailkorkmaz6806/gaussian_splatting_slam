@@ -57,7 +57,8 @@ from OpenGL.GLU import *
 from pro_features import (
     CeilingCuller, LaserRuler, VideoRecorder,
     FloorplanEstimator, export_to_standalone_html,
-    ProximityHeatmapEngine, OctomapEngine, Drone3DModel
+    ProximityHeatmapEngine, OctomapEngine, Drone3DModel,
+    DronePhysicsEngine, OpticalFlowHUD
 )
 from tunnel_report_generator import generate_tunnel_report
 
@@ -236,10 +237,19 @@ class HUDControllerPro:
 
             # Kontrol tuşlarının açıklamaları
             controls = [
-                ("🕹️ HAREKET & UÇUŞ", ""),
-                ("[W / A / S / D]", "İleri / Sol / Geri / Sağ Serbest Uçuş"),
-                ("[SPACE / SHIFT]", "Yukarı Yüksel / Aşağı Alçal"),
+                ("🕹️ HAREKET & UÇUŞ (FİZİK MOTORU)", ""),
+                ("[W / A / S / D]", "İleri / Sol / Geri / Sağ Uçuş"),
+                ("[SPACE]", "🚀 Yukarı Gaz (Bırakınca yerçekimi alçaltır)"),
+                ("[SHIFT]", "⚡ Hızlı Uçuş Modu (2x Hız)"),
                 ("[Fare Sol Sürükle]", "360° Serbest Kamera Açısı"),
+                ("", ""),
+                ("🎮 COMMANDO 8 KUMANDA", ""),
+                ("[Sol Stick]", "🕹️ İleri / Geri / Sağ / Sol Hareket"),
+                ("[Sağ Stick]", "📷 Kamera Yaw / Pitch Kontrolü"),
+                ("[R2 Tetik]", "🚀 Yukarı Gaz  |  [L2] Alçal"),
+                ("[RB]", "⚡ Hızlı Uçuş  |  [D-Pad] Tavan/Splat"),
+                ("[A]", "📋 Panel  [B] Flow  [X] Tavan  [Y] Sıfırla"),
+                ("[LB]", "🧊 OctoMap  [Select] Tur  [Start] Çıkış"),
                 ("", ""),
                 ("🔍 BÜYÜTME & KÜÇÜLTME (ZOOM)", ""),
                 ("[+] / [-]", "🔍 Kamera Yakınlaş (Büyüt) / Uzaklaş (Küçült)"),
@@ -254,15 +264,16 @@ class HUDControllerPro:
                 ("[T] Tuşu", "🗺️ 90° Kuşbakışı Kat Planı ve m² Alan Hesabı"),
                 ("[E] Tuşu", "📏 3B Lazer Cetvel (İki Nokta Arası Metre Ölçümü)"),
                 ("[U] Tuşu", "⚠️ Tünel Darboğaz & Tehlike Isı Haritası (<1.1m)"),
-                ("[O] Tuşu", "🧊 OctoMap 3B Voksel / Doluluk Izgara Modu"),
+                ("[O] Tuşu", "🧊 OctoMap 3B Voksel + Çarpışma Haritası Yükle"),
                 ("[J] Tuşu", "📄 Tünel İnceleme & PDF/HTML Raporu Üret"),
                 ("", ""),
                 ("🚀 PRO ÇIKTI VE VİDEO", ""),
+                ("[I] Tuşu", "🌊 Optik Flow HUD Aç / Kapat"),
                 ("[V] Tuşu", "🎬 60 FPS MP4 Video Kaydını Başlat / Durdur"),
                 ("[K] Tuşu", "🌐 Bağımsız Web / HTML 3B Modelini Dışa Aktar"),
                 ("[M] Tuşu", "🪞 Sağ / Sol Yönünü Aynala / Düzelt"),
                 ("[F] Tuşu", "🚁 3. Şahıs / 1. Şahıs / Serbest Dron Kamerası"),
-                ("[P] Tuşu", "🎥 Sinematik Tur | [R]: Başa Sıfırla"),
+                ("[P] Tuşu", "🎥 Sinematik Tur | [R]: Başa Sıfırla | [ESC]: Çıkış"),
             ]
 
 
@@ -450,6 +461,16 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     hud = HUDControllerPro()
     drone_model = Drone3DModel()
     drone_view_mode = 2  # 2: Serbest Gezgin Modu (Doğrudan kamera, önde dron gövdesi olmadan pürüzsüz uçuş)
+
+    # 🚁 Drone Fizik Motoru ve Optik Flow
+    physics = DronePhysicsEngine()
+    optical_flow = OpticalFlowHUD(grid_cols=14, grid_rows=9)
+    show_optical_flow = True  # [I] tuşuyla açılıp kapatılabilir
+
+    # Zemin yüksekliğini fizik motoruna bildir
+    if room_bounds is not None:
+        physics.set_floor(room_bounds['min_y'])
+
     hud.set_toast(f"✨ 3DGS Başlatıldı! {quality_names[quality_idx]} ([F] Kamera, [B] Mod)", 5.0)
 
     # RGBA Renk Matrisini Hazırla (Renk + Opaklık)
@@ -463,18 +484,35 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     # Pygame & OpenGL Penceresini Başlat
     pygame.init()
     win_w, win_h = 1280, 720
+
+    # 🎮 Commando 8 Kumanda Başlatma
+    pygame.joystick.init()
+    joystick = None
+    joystick_name = "Yok"
+    if pygame.joystick.get_count() > 0:
+        joystick = pygame.joystick.Joystick(0)
+        joystick.init()
+        joystick_name = joystick.get_name()
+        print(f" 🎮 Kumanda Bulundu: {joystick_name}")
+        print(f"    Axis: {joystick.get_numaxes()} | Buton: {joystick.get_numbuttons()} | Hat: {joystick.get_numhats()}")
+    else:
+        print(" ⌨️  Kumanda bulunamadı — sadece klavye/fare ile kontrol.")
+
     # MSAA kapatıldı (nokta bulutlarında gereksiz GPU yükünü önler)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLEBUFFERS, 0)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLESAMPLES, 0)
     # Linux Wayland/XWayland V-Sync tampon takılmasını önleme
     pygame.display.gl_set_attribute(pygame.GL_SWAP_CONTROL, 0)
     pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL | RESIZABLE)
-    pygame.key.set_repeat(250, 35)
+    # OPENGL modunda key.get_pressed() için event.pump() çağrılmalı
+    # key.set_repeat kaldırıldı: get_pressed() kendi başına sürekli tuş okur
+    pygame.key.set_repeat(0)
 
     gpu_vendor = glGetString(GL_VENDOR).decode(errors='replace')
     gpu_renderer = glGetString(GL_RENDERER).decode(errors='replace')
     print(f" 🚀 Aktif 3DGS GPU Donanımı: {gpu_renderer} ({gpu_vendor})")
-    pygame.display.set_caption(f"3D Gaussian Splatting Ultimate [{gpu_renderer}]")
+    joy_info = f" | 🎮 {joystick_name}" if joystick else ""
+    pygame.display.set_caption(f"3D Gaussian Splatting Ultimate [{gpu_renderer}{joy_info}]")
 
     # OpenGL Render Ayarları
     glEnable(GL_DEPTH_TEST)
@@ -576,8 +614,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             cam_yaw, cam_pitch = 0.0, 0.0
             target_yaw, target_pitch = 0.0, 0.0
 
-    vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
-    flight_speed = 0.22
+    # Fizik motorunu başlangıç konumuyla senkronize et
+    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+    if room_bounds is not None:
+        physics.set_floor(room_bounds['min_y'])
+
 
     cam_fov = 60.0              # Görüş alanı (FOV / Zoom)
     target_fov = 60.0           # Hedef görüş alanı (Yumuşak optik zoom)
@@ -652,7 +693,94 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     target_pitch += dy * 0.22
                     target_pitch = max(-89.0, min(89.0, target_pitch))
 
+            # ─────────────────────────────────────────────────────────
+            # 🎮 COMMANDO 8 BUTON OLAYLARI (Tek Basış Aksiyonları)
+            # ─────────────────────────────────────────────────────────
+            elif event.type == pygame.JOYBUTTONDOWN and joystick:
+                btn = event.button
+                # ┌─ Commando 8 Buton Haritası ──────────────────────┐
+                # │  0 = A / Çapraz   → Kontrol Paneli aç/kapat [H]  │
+                # │  1 = B / Daire    → Optik Flow aç/kapat [I]      │
+                # │  2 = X / Kare     → Tavan gizle/göster [G]       │
+                # │  3 = Y / Üçgen    → Sıfırla [R]                  │
+                # │  4 = LB / L1      → OctoMap + Çarpışma Haritası  │
+                # │  5 = RB / R1      → Hızlı Mod (polling'den okunur)│
+                # │  6 = Select/Share → Sinematik Tur [P]             │
+                # │  7 = Start/Options→ Çıkış [ESC]                  │
+                # │  8 = Sol Stick Bas→ Zoom Sıfırla [0]             │
+                # │  9 = Sağ Stick Bas→ Aynalama [M]                 │
+                # │ 10 = Home/PS      → Kamera Modu [F]              │
+                # └──────────────────────────────────────────────────┘
+                if btn == 0:    # A → Kontrol Paneli
+                    hud.show_panel = not hud.show_panel
+                    hud.dirty = True
+                    hud.set_toast("🎮 Kontrol Paneli " + ("AÇIK" if hud.show_panel else "KAPALI"), 1.2)
+                elif btn == 1:  # B → Optik Flow
+                    show_optical_flow = not show_optical_flow
+                    hud.set_toast(f"🌊 Optik Flow: {'AÇIK' if show_optical_flow else 'KAPALI'}", 1.5)
+                elif btn == 2:  # X → Tavan Gizle/Göster
+                    c_state = culler.toggle()
+                    hud.set_toast(f"🏠 Tavan: {'GİZLENDİ' if c_state else 'GÖSTERİLİYOR'}", 2.0)
+                elif btn == 3:  # Y → Sıfırla
+                    auto_tour = False; tour_progress = 0.0; top_down_view = False
+                    culler.enabled = False
+                    if len(auto_waypoints) > 1:
+                        drone_x, drone_y, drone_z = float(auto_waypoints[0][0]), float(auto_waypoints[0][1]), float(auto_waypoints[0][2])
+                    else:
+                        drone_x, drone_y, drone_z = 0.0, 1.5, 0.0
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+                    physics.vx = physics.vy = physics.vz = 0.0
+                    target_yaw, target_pitch = 0.0, 0.0; cam_yaw, cam_pitch = 0.0, 0.0
+                    cam_fov = 60.0; target_fov = 60.0
+                    hud.set_toast("🔄 Sıfırlandı (Commando 8: Y)", 2.0)
+                elif btn == 4:  # LB → OctoMap + Çarpışma Haritası
+                    o_active = octomap_engine.toggle()
+                    if o_active and vbo_octo_xyz is None:
+                        hud.set_toast("⏳ OctoMap hesaplanıyor... (bekle)", 2.0)
+                    elif o_active:
+                        hud.set_toast(f"🧊 OctoMap: AÇIK ({octomap_engine.num_cubes:,} Küp)", 2.0)
+                    else:
+                        hud.set_toast("🔮 OctoMap: KAPALI", 1.5)
+                elif btn == 6:  # Select → Sinematik Tur
+                    if len(auto_waypoints) > 0:
+                        auto_tour = not auto_tour
+                        user_override_look = False
+                        hud.set_toast("🎥 Tur: " + ("BAŞLATILDI" if auto_tour else "DURDURULDU"), 2.0)
+                elif btn == 7:  # Start → Çıkış
+                    running = False
+                elif btn == 8:  # Sol Stick Bas → Zoom Sıfırla
+                    target_fov = 60.0; cam_fov = 60.0
+                    hud.set_toast("🔍 Zoom Sıfırlandı (60°)", 1.2)
+                elif btn == 9:  # Sağ Stick Bas → Aynalama
+                    is_flipped = not is_flipped
+                    raw_xyz[:, 0] = -raw_xyz[:, 0]
+                    apply_quality_mode(quality_idx)
+                    drone_x = -drone_x
+                    physics.x = drone_x
+                    hud.set_toast(f"🪞 Ayna: {'TERS' if is_flipped else 'ORİJİNAL'}", 2.0)
+                elif btn == 10: # Home → Kamera Modu
+                    drone_view_mode = (drone_view_mode + 1) % 3
+                    modes = ["🚁 3. Şahıs Takip", "📷 1. Şahıs FPV", "🌐 Serbest"]
+                    hud.set_toast(f"Kamera: {modes[drone_view_mode]}", 2.0)
+
+            # D-Pad (Hat) → Tavan Kesme Seviyesi Ayarı
+            elif event.type == pygame.JOYHATMOTION and joystick:
+                hx, hy = event.value
+                if hy > 0:   # D-Pad Yukarı → Tavan yükselt
+                    r = culler.adjust_cut(+0.05); culler.enabled = True
+                    hud.set_toast(f"✂️ Tavan: %{r*100:.0f}", 1.0)
+                elif hy < 0: # D-Pad Aşağı → Tavan alçalt
+                    r = culler.adjust_cut(-0.05); culler.enabled = True
+                    hud.set_toast(f"✂️ Tavan: %{r*100:.0f}", 1.0)
+                elif hx > 0: # D-Pad Sağ → Splat boyutu büyüt
+                    splat_point_size = min(15.0, splat_point_size + 0.5)
+                    hud.set_toast(f"🔮 Splat: {splat_point_size:.1f}", 1.0)
+                elif hx < 0: # D-Pad Sol → Splat boyutu küçült
+                    splat_point_size = max(1.0, splat_point_size - 0.5)
+                    hud.set_toast(f"🔮 Splat: {splat_point_size:.1f}", 1.0)
+
             elif event.type == KEYDOWN:
+
                 if event.key in (K_h, K_TAB):
                     hud.show_panel = not hud.show_panel
                     hud.dirty = True
@@ -762,7 +890,18 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                                 glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_rgba)
                                 glBufferData(GL_ARRAY_BUFFER, c_cols.nbytes, c_cols, GL_STATIC_DRAW)
                                 glBindBuffer(GL_ARRAY_BUFFER, 0)
-                        hud.set_toast(f"🧊 OctoMap 3B Voksel Modu: AÇIK ({octomap_engine.num_cubes:,} Küp)", 3.5)
+
+                                # 🚁 Çarpışma haritasını fizik motoruna yükle
+                                if octomap_engine.voxel_centers is not None:
+                                    physics.set_collision_map(
+                                        octomap_engine.voxel_centers,
+                                        voxel_size=octomap_engine.voxel_size
+                                    )
+                                    hud.set_toast(f"🧊 OctoMap + Çarpışma Haritası Yüklendi ({octomap_engine.num_cubes:,} Küp)", 3.5)
+                                else:
+                                    hud.set_toast(f"🧊 OctoMap 3B Voksel Modu: AÇIK ({octomap_engine.num_cubes:,} Küp)", 3.5)
+                        else:
+                            hud.set_toast(f"🧊 OctoMap 3B Voksel Modu: AÇIK ({octomap_engine.num_cubes:,} Küp)", 3.5)
                     else:
                         hud.set_toast("🔮 3DGS Fotogerçekçi Renk Moduna Dönüldü", 2.0)
                 elif event.key == K_j:
@@ -791,15 +930,23 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
 
                 elif event.key == K_1 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[0]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+                    physics.vx = physics.vy = physics.vz = 0.0
                     hud.set_toast("🚪 Konum 1'e Işınlanıldı (Giriş)", 1.5)
                 elif event.key == K_2 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[len(auto_waypoints)//3]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+                    physics.vx = physics.vy = physics.vz = 0.0
                     hud.set_toast("🚪 Konum 2'ye Işınlanıldı (Orta 1)", 1.5)
                 elif event.key == K_3 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[2*len(auto_waypoints)//3]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+                    physics.vx = physics.vy = physics.vz = 0.0
                     hud.set_toast("🚪 Konum 3'e Işınlanıldı (Orta 2)", 1.5)
                 elif event.key == K_4 and len(auto_waypoints) > 0:
                     auto_tour = False; p = auto_waypoints[-1]; drone_x, drone_y, drone_z = float(p[0]), float(p[1]), float(p[2])
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+                    physics.vx = physics.vy = physics.vz = 0.0
                     hud.set_toast("🚪 Konum 4'e Işınlanıldı (Son Nokta)", 1.5)
                 elif event.key == K_t:
                     # 🗺️ 90° Kuşbakışı Kat Planı
@@ -827,12 +974,21 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     else:
                         drone_x, drone_y, drone_z = 0.0, 1.5, 0.0
                         target_yaw, target_pitch = 0.0, 0.0; cam_yaw, cam_pitch = 0.0, 0.0
-                    vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
+                    # Fizik motorunu da sıfırla
+                    physics.vx = 0.0; physics.vy = 0.0; physics.vz = 0.0
+                    physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
                     cam_fov = 60.0
                     target_fov = 60.0
                     hud.set_toast("🔄 Kamera Başlangıç Rotasına Sıfırlandı", 2.0)
-                elif event.key in (K_ESCAPE, K_q):
+
+                elif event.key == K_i:
+                    # 🌊 Optik Flow HUD Aç / Kapat ([I] Tuşu)
+                    show_optical_flow = not show_optical_flow
+                    hud.set_toast(f"🌊 Optik Flow: {'AÇIK' if show_optical_flow else 'KAPALI'}", 1.5)
+
+                elif event.key == K_ESCAPE:
                     running = False
+
 
         # Keskin ve doğrudan kamera yönü (Sıfır gecikmeli fare bakışı)
         cam_yaw = target_yaw
@@ -845,7 +1001,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         right_x = math.cos(rad_yaw)
         right_z = -math.sin(rad_yaw)
 
-        # Kamera Hareketi (Sinematik Tur veya W/A/S/D Klavye Uçuşu)
+        # ⚠️ OPENGL modunda pygame.key.get_pressed() çalışabilmesi için
+        # event.pump() zorunludur — bu olmadan tuşlar hiç okunmaz!
+        pygame.event.pump()
+
+        # Kamera Hareketi (Sinematik Tur veya Fizik Tabanlı W/A/S/D Klavye Uçuşu)
         if auto_tour and len(auto_waypoints) > 1:
             tour_progress += dt * (tour_speed * 110.0)
             if tour_progress >= len(auto_waypoints) - 1:
@@ -856,6 +1016,9 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             pos0, pos1 = auto_waypoints[idx0], auto_waypoints[idx1]
             t_pos = (1.0 - alpha) * pos0 + alpha * pos1
             drone_x, drone_y, drone_z = float(t_pos[0]), float(t_pos[1]), float(t_pos[2])
+            # Tur sırasında fizik motorunu da senkronize tut
+            physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
+            physics.vx = physics.vy = physics.vz = 0.0
 
             # Kullanıcı fareyle serbest bakışa geçtiyse yönü kilitleme; dokunmadıysa rotayı takip etsin
             if not user_override_look:
@@ -869,43 +1032,159 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
                     target_yaw += diff_yaw * 0.14
                     target_pitch = 0.86 * target_pitch + 0.14 * t_pitch
         else:
+            # 🎮 Fizik Tabanlı Klavye + Commando 8 Joystick Kontrolü
             keys = pygame.key.get_pressed()
-            # Anında tepki veren doğrudan hareket (Sıfır gecikme)
-            spd = 3.8 * dt
-            if keys[K_LSHIFT] or keys[K_RSHIFT]:
-                spd *= 2.5  # Shift ile 2.5x Hızlı Uçuş
+            fast_mode = bool(keys[K_LSHIFT] or keys[K_RSHIFT])
 
-            move_x, move_y, move_z = 0.0, 0.0, 0.0
-            if keys[K_w] or keys[K_UP]: move_x += fwd_x * spd; move_y += fwd_y * spd; move_z += fwd_z * spd
-            if keys[K_s] or keys[K_DOWN]: move_x -= fwd_x * spd; move_y -= fwd_y * spd; move_z -= fwd_z * spd
-            if keys[K_a] or keys[K_LEFT]: move_x -= right_x * spd; move_z -= right_z * spd
-            if keys[K_d] or keys[K_RIGHT]: move_x += right_x * spd; move_z += right_z * spd
-            if keys[K_SPACE] or keys[K_e]: move_y += spd
-            if keys[K_q] or keys[K_LCTRL]: move_y -= spd
+            # --- Joystick Giriş Okuma (Commando 8) ---
+            # Deadzone: analog stick sürüklemesini önler
+            JOY_DEADZONE = 0.12
+            # Joystick'ten gelen normalize edilmiş giriş değerleri (-1..+1)
+            joy_fwd    = 0.0   # Sol Stick Y: ileri(+) / geri(-)
+            joy_right  = 0.0   # Sol Stick X: sağ(+) / sol(-)
+            joy_up     = 0.0   # R2 Tetik: yukarı | L2 Tetik: aşağı
+            joy_yaw    = 0.0   # Sağ Stick X: sola(-) / sağa(+) kamera dönüşü
+            joy_pitch  = 0.0   # Sağ Stick Y: aşağı(-) / yukarı(+) kamera eğimi
+            joy_fast   = False # RB (Sağ Omuz): hızlı uçuş
+            joy_throttle = False  # R2 tetik basılıysa True (yukarı gaz)
 
-            drone_x += move_x
-            drone_y += move_y
-            drone_z += move_z
+            if joystick:
+                num_axes = joystick.get_numaxes()
+
+                def joy_axis(idx, invert=False):
+                    if idx >= num_axes:
+                        return 0.0
+                    v = joystick.get_axis(idx)
+                    v = 0.0 if abs(v) < JOY_DEADZONE else v
+                    return -v if invert else v
+
+                # ── Hareket Eksenleri ──
+                # Sol Stick Y → İleri/Geri (eksen genellikle ters: aşağı + değer = geri)
+                raw_fwd   = joy_axis(1, invert=True)   # Axis 1: Sol Stick Y (ters)
+                raw_right = joy_axis(0)                 # Axis 0: Sol Stick X
+
+                # ── Tetikler (L2 / R2) ──
+                # Birçok gamepad'de tetikler -1 (bırakılmış) → +1 (tam basılı) arası döner
+                # Normalize: (raw + 1) / 2  → 0..1
+                if num_axes >= 6:
+                    r2_raw = joystick.get_axis(5)   # R2 → yukarı gaz
+                    l2_raw = joystick.get_axis(4)   # L2 → aşağı / alçal
+                    r2 = max(0.0, (r2_raw + 1.0) / 2.0)  # 0 (bırakılmış) → 1 (tam)
+                    l2 = max(0.0, (l2_raw + 1.0) / 2.0)
+                else:
+                    # Bazı controllerlarda tetikler button olarak gelir
+                    r2 = float(joystick.get_button(7) if joystick.get_numbuttons() > 7 else 0)
+                    l2 = float(joystick.get_button(6) if joystick.get_numbuttons() > 6 else 0)
+
+                joy_up = r2 - l2  # +1 = tam gaz yukarı, -1 = tam alçal
+
+                # ── Kamera Eksenleri ──
+                raw_yaw   = joy_axis(2)             # Sağ Stick X → kamera yaw
+                raw_pitch = joy_axis(3, invert=True) # Sağ Stick Y → kamera pitch (ters)
+
+                joy_fwd    = raw_fwd
+                joy_right  = raw_right
+                joy_yaw    = raw_yaw
+                joy_pitch  = raw_pitch
+                joy_throttle = r2 > 0.15   # R2 basılıysa yukarı gaz aktif
+
+                # ── Omuz Tuşları ──
+                joy_fast = bool(joystick.get_button(5)) if joystick.get_numbuttons() > 5 else False   # RB → hızlı
+
+                # ── Sağ Stick ile Kamera Kontrolü ──
+                cam_sensitivity = 90.0  # derece/saniye
+                if abs(joy_yaw) > 0.0:
+                    target_yaw   += joy_yaw   * cam_sensitivity * dt
+                    user_override_look = True
+                if abs(joy_pitch) > 0.0:
+                    target_pitch += joy_pitch * cam_sensitivity * dt * 0.6
+                    target_pitch  = max(-89.0, min(89.0, target_pitch))
+                    user_override_look = True
+
+                # ── Joystick Buton Aksiyonları (tek basış) ──
+                # Bu event'ler JOYBUTTON'dan değil, polling'den — sadece basılı değil
+                # anlık geçiş için bir önceki frame değeri tutmak gerekir;
+                # burada basit "basılı tutma" mantığı kullanıyoruz:
+
+                # Buton 4 (LB) → Optik Flow aç/kapat (tek basış değil, tutma OK)
+                # Buton 3 (Y)  → Reset
+                # Buton 2 (X)  → Tavan gizle/göster
+                # Buton 1 (B)  → OctoMap (basılıysa tetikle — rate limit yap)
+
+            # ── Joystick + Klavye Birleşimi ──
+            # Fizik motoruna giriş: joystick OR klavye, hangisi daha büyükse kazan
+            combined_fwd   = max(min(joy_fwd,   1.0), -1.0) != 0.0
+            combined_back  = joy_fwd  < -JOY_DEADZONE
+            combined_right = joy_right > JOY_DEADZONE
+            combined_left  = joy_right < -JOY_DEADZONE
+
+            move_fwd   = bool(keys[K_w] or keys[K_UP])   or (joy_fwd  > JOY_DEADZONE)
+            move_back  = bool(keys[K_s] or keys[K_DOWN])  or (joy_fwd  < -JOY_DEADZONE)
+            move_left  = bool(keys[K_a] or keys[K_LEFT])  or (joy_right < -JOY_DEADZONE)
+            move_right = bool(keys[K_d] or keys[K_RIGHT]) or (joy_right > JOY_DEADZONE)
+            throttle_up = bool(keys[K_SPACE]) or joy_throttle
+            fast_mode   = fast_mode or joy_fast
+
+            # Joystick analog → fizik kuvvetini ölçekle (tam basış = tam kuvvet)
+            # Bu için step() içindeki fwd_x/z vektörlerini joy büyüklüğüyle çarp
+            joy_fwd_mag   = abs(joy_fwd)   if abs(joy_fwd)   > JOY_DEADZONE else 1.0
+            joy_right_mag = abs(joy_right) if abs(joy_right) > JOY_DEADZONE else 1.0
+            effective_fwd_x = fwd_x * (joy_fwd_mag if (move_fwd or move_back) else 1.0)
+            effective_fwd_z = fwd_z * (joy_fwd_mag if (move_fwd or move_back) else 1.0)
+            effective_right_x = right_x * (joy_right_mag if (move_left or move_right) else 1.0)
+            effective_right_z = right_z * (joy_right_mag if (move_left or move_right) else 1.0)
+
+            # İleri/Geri/Sağ/Sol/Yukarı/Aşağı girişlerini fizik motoruna ilet
+            drone_x, drone_y, drone_z = physics.step(
+                dt=dt,
+                throttle_up=throttle_up,
+                move_fwd=move_fwd,
+                move_back=move_back,
+                move_left=move_left,
+                move_right=move_right,
+                fwd_x=effective_fwd_x, fwd_y=fwd_y, fwd_z=effective_fwd_z,
+                right_x=effective_right_x, right_z=effective_right_z,
+                fast_mode=fast_mode
+            )
+
+            # 💥 Çarpışma bildirimi ve kırmızı flaş
+            if physics.is_crashed:
+                hud.set_toast("💥 ÇARPIŞMA! Duvarla temas — düşüyor!", 1.8)
+                hud.dirty = True
+
+
+        # 🌊 Optik Flow HUD güncelle
+        optical_flow.update(physics.vx, physics.vy, physics.vz, dt)
 
         # 🚁 Dron Modelinin Konum ve Yönünü Güncelle
         drone_model.x, drone_model.y, drone_model.z = drone_x, drone_y, drone_z
         drone_model.yaw = cam_yaw
-        drone_model.pitch = cam_pitch
-        drone_model.update(dt)
+        drone_model.update(
+            dt=dt,
+            vx=physics.vx,
+            vy=physics.vy,
+            vz=physics.vz,
+            throttle=physics.throttle,
+            is_airborne=not physics.is_landed
+        )
+
+        rx, ry, rz, ryaw, rpitch, rroll = drone_model.get_render_pose()
 
         # 🎥 Kamera Görünüm Moduna Göre Kamera Konumunu Ayarla
         if drone_view_mode == 0:
-            # 3. Şahıs Takip Kamerası (Dronun Arkasından)
+            # 3. Şahıs Takip Kamerası (Dronun Arkasından) + Mikro Kamera Sarsıntısı
             cam_dist = 1.40
             cam_h = 0.42
-            render_cam_x = drone_x - fwd_x * cam_dist
-            render_cam_y = drone_y + cam_h - fwd_y * cam_dist
-            render_cam_z = drone_z - fwd_z * cam_dist
+            render_cam_x = rx - fwd_x * cam_dist + drone_model.cam_shake_x
+            render_cam_y = ry + cam_h - fwd_y * cam_dist + drone_model.cam_shake_y
+            render_cam_z = rz - fwd_z * cam_dist
+            eff_cam_pitch = cam_pitch + drone_model.cam_shake_rot
         else:
             # 1. Şahıs Kokpit (FPV) veya Serbest
-            render_cam_x = drone_x
-            render_cam_y = drone_y
-            render_cam_z = drone_z
+            render_cam_x = rx + drone_model.cam_shake_x
+            render_cam_y = ry + drone_model.cam_shake_y
+            render_cam_z = rz
+            eff_cam_pitch = cam_pitch + drone_model.cam_shake_rot
 
         # OpenGL Ekranını Temizle
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -921,7 +1200,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # ModelView Matrisi (Kamera Dönüş ve Konum Dönüşümleri)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        glRotatef(cam_pitch, 1, 0, 0)
+        glRotatef(eff_cam_pitch, 1, 0, 0)
         glRotatef(-cam_yaw, 0, 1, 0)
         glTranslatef(-render_cam_x, -render_cam_y, -render_cam_z)
 
@@ -1003,6 +1282,47 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
 
         # Tavan Kesme Düzlemini Kaldır (2B Arayüz için)
         culler.restore_gl()
+
+        # 🌊 Optik Flow Ok Izgara Çizimi (hareket ederken görünür)
+        if show_optical_flow and not auto_tour:
+            optical_flow.draw_gl(win_w, win_h, cam_yaw)
+
+        # 💥 Çarpışma Kırmızı Flaş Efekti (ekranın kenarlarına kırmızı overlay)
+        if physics.crash_timer > 0.0:
+            flash_alpha = min(0.55, physics.crash_timer * 0.9)
+            glPushAttrib(GL_ALL_ATTRIB_BITS)
+            glMatrixMode(GL_PROJECTION)
+            glPushMatrix()
+            glLoadIdentity()
+            glOrtho(0, win_w, win_h, 0, -1, 1)
+            glMatrixMode(GL_MODELVIEW)
+            glPushMatrix()
+            glLoadIdentity()
+            glDisable(GL_DEPTH_TEST)
+            glDisable(GL_TEXTURE_2D)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            border = 60
+            glColor4f(1.0, 0.05, 0.05, flash_alpha)
+            glBegin(GL_QUADS)
+            # Sol kenar
+            glVertex2f(0, 0); glVertex2f(border, 0)
+            glVertex2f(border, win_h); glVertex2f(0, win_h)
+            # Sağ kenar
+            glVertex2f(win_w - border, 0); glVertex2f(win_w, 0)
+            glVertex2f(win_w, win_h); glVertex2f(win_w - border, win_h)
+            # Üst kenar
+            glVertex2f(0, 0); glVertex2f(win_w, 0)
+            glVertex2f(win_w, border); glVertex2f(0, border)
+            # Alt kenar
+            glVertex2f(0, win_h - border); glVertex2f(win_w, win_h - border)
+            glVertex2f(win_w, win_h); glVertex2f(0, win_h)
+            glEnd()
+            glMatrixMode(GL_MODELVIEW)
+            glPopMatrix()
+            glMatrixMode(GL_PROJECTION)
+            glPopMatrix()
+            glPopAttrib()
 
         # 2B Yarı Saydam Kontrol Paneli & HUD Çizimi
         hud.render_gl(win_w, win_h, current_fps, num_splats, cam_fov, is_flipped,

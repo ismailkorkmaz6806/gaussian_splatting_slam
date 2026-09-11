@@ -1,11 +1,10 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 ========================================================================================
  🎮 144+ FPS 3B DRON & TÜNEL UÇUŞ SİMÜLATÖRÜ (dron_tunel_simulatoru.py)
 ========================================================================================
-Doğrudan [W/A/S/D/SPACE/SHIFT] ve fare ile tünelde serbestçe uçabileceğiniz,
-dönen pervaneleri, ön feneri, TFmini lazeri ve 3. şahıs / FPV kamerası olan
-saf yerel Windows simülatörü!
+Holybro X500 Quadcopter Kit mimarisi ile gerçekçi fizik motoru, dinamik pitch/roll eğimi,
+yüksek hızlı dönen pervaneler (motion-blur), irtifa mikro-salınımı ve kamera sarsıntısı!
 ========================================================================================
 """
 
@@ -20,42 +19,42 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 
 # Pro modüller
-from pro_features import Drone3DModel
+from pro_features import Drone3DModel, DronePhysicsEngine
 
 def create_tunnel_mesh(length=80.0, radius=3.5, segments=32):
     """Karanlık, kemerli 3B kaya tüneli mesh'i üretir."""
     verts = []
     cols = []
-    
+
     # Tünel Segmanları
     dz = 1.0
     num_rings = int(length / dz)
-    
+
     for ring in range(num_rings):
         z0 = ring * dz
         z1 = (ring + 1) * dz
-        
+
         for i in range(segments):
             angle0 = (i / segments) * 2 * math.pi
             angle1 = ((i + 1) / segments) * 2 * math.pi
-            
+
             x0_0, y0_0 = math.cos(angle0) * radius, math.sin(angle0) * radius + 2.0
             x0_1, y0_1 = math.cos(angle1) * radius, math.sin(angle1) * radius + 2.0
-            
+
             x1_0, y1_0 = math.cos(angle0) * radius, math.sin(angle0) * radius + 2.0
             x1_1, y1_1 = math.cos(angle1) * radius, math.sin(angle1) * radius + 2.0
-            
+
             # Kaya rengi varyasyonu
             base_c = 0.22 + 0.08 * math.sin(ring * 0.5 + i)
             c = (base_c * 0.9, base_c * 0.8, base_c * 0.75, 1.0)
-            
+
             # 2 Üçgen (Quad)
             verts.extend([
                 x0_0, y0_0, z0,  x0_1, y0_1, z0,  x1_1, y1_1, z1,
                 x0_0, y0_0, z0,  x1_1, y1_1, z1,  x1_0, y1_0, z1
             ])
             cols.extend([*c, *c, *c, *c, *c, *c])
-            
+
     return np.array(verts, dtype=np.float32), np.array(cols, dtype=np.float32)
 
 def main():
@@ -64,7 +63,7 @@ def main():
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLEBUFFERS, 1)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLESAMPLES, 4)
     pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL | RESIZABLE)
-    pygame.display.set_caption("🎮 3B DRON TÜNEL SİMÜLATÖRÜ [W/A/S/D: Uç | Fare: Bak | F: Kamera]")
+    pygame.display.set_caption("🎮 3B HOLYBRO X500 TÜNEL SİMÜLATÖRÜ [W/A/S/D: Uç | Fare: Bak | F: Kamera]")
 
     glEnable(GL_DEPTH_TEST)
     glDepthFunc(GL_LEQUAL)
@@ -82,39 +81,38 @@ def main():
     glBufferData(GL_ARRAY_BUFFER, t_cols.nbytes, t_cols, GL_STATIC_DRAW)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-    # Dron Modeli
+    # Dron Modeli & Fizik Motoru
     drone = Drone3DModel()
-    drone.x, drone.y, drone.z = 0.0, 1.5, 2.0
+    physics = DronePhysicsEngine()
+    physics.x, physics.y, physics.z = 0.0, 1.6, 2.0
+    physics.set_floor(0.0)
+
+    drone.x, drone.y, drone.z = physics.x, physics.y, physics.z
     drone.spotlight = True
     drone.laser = True
 
     cam_yaw, cam_pitch = 0.0, 0.0
     target_yaw, target_pitch = 0.0, 0.0
     cam_fov = 65.0
-    camera_mode = 0  # 0: 3. Şahıs Takip (GTA), 1: 1. Şahıs FPV
-
-    vel_x, vel_y, vel_z = 0.0, 0.0, 0.0
-    flight_speed = 0.28
+    camera_mode = 0  # 0: 3. Şahıs Takip, 1: 1. Şahıs FPV
 
     clock = pygame.time.Clock()
     mouse_down = False
     last_mpos = (0, 0)
     running = True
 
-    font = pygame.font.SysFont("Segoe UI", 13, bold=True)
-
     recording = False
     recorded_frames = 0
-    t_rec_start = 0
 
-    print("\n" + "="*65)
-    print(" 🚁 144+ FPS 3B DRON & TÜNEL SİMÜLATÖRÜ AKTİF!")
-    print(" 🕹️ [W / S / A / D] : İleri / Geri / Sola / Sağa Uç")
-    print(" 🚀 [SPACE / SHIFT] : Yukarı Yüksel / Aşağı Alçal")
+    print("\n" + "="*70)
+    print(" 🚁 144+ FPS 3B HOLYBRO X500 DRON & TÜNEL SİMÜLATÖRÜ AKTİF!")
+    print(" 🌪️ Gerçekçi Aerodinamik Tilt (Pitch/Roll), Pervane Motion Blur & Salınım")
+    print(" 🕹️ [W / S / A / D] : İleri (Nose-Down) / Geri / Sola / Sağa (Roll Bank)")
+    print(" 🚀 [SPACE / SHIFT] : Yukarı Gaz / Aşağı İniş")
     print(" 🔄 [Fare Sürükle]  : Dronun ve Kameranın Yönünü Çevir")
     print(" 📷 [F] Tuşu        : 3. Şahıs Takip <-> 1. Şahıs FPV Kamera")
     print(" 📸 [R] Tuşu        : Canlı 3B Harita Taramasını Başlat / Bitir")
-    print("="*65 + "\n")
+    print("="*70 + "\n")
 
     while running:
         dt = clock.tick(144) / 1000.0
@@ -148,11 +146,9 @@ def main():
                     recording = not recording
                     if recording:
                         recorded_frames = 0
-                        t_rec_start = time.time()
                         print(" 🔴 TARAMA BAŞLATILDI! Dronu tünelde uçurun...")
                     else:
                         print(f" 💾 TARAMA BİTTİ ({recorded_frames} Kare Alındı). 3B Harita üretiliyor...")
-                        # 3B Haritayı Başlat
                         pygame.quit()
                         os.system(f'python "{os.path.join(os.path.dirname(__file__), "gaussian_renderer.py")}" gaussian_scene.ply')
                         return
@@ -170,34 +166,43 @@ def main():
         right_x = math.cos(rad_yaw)
         right_z = -math.sin(rad_yaw)
 
-        # Klavye Kontrolleri
+        # Klavye Kontrolleri & Fizik Motoru Entegrasyonu
         keys = pygame.key.get_pressed()
-        target_vx, target_vy, target_vz = 0.0, 0.0, 0.0
-        spd = flight_speed * (60.0 * dt)
+        move_fwd = bool(keys[K_w] or keys[K_UP])
+        move_back = bool(keys[K_s] or keys[K_DOWN])
+        move_left = bool(keys[K_a] or keys[K_LEFT])
+        move_right = bool(keys[K_d] or keys[K_RIGHT])
+        throttle_up = bool(keys[K_SPACE])
+        fast_mode = bool(keys[K_LSHIFT] or keys[K_RSHIFT])
 
-        if keys[K_w] or keys[K_UP]:
-            target_vx += fwd_x * spd; target_vy += fwd_y * spd; target_vz += fwd_z * spd
-        if keys[K_s] or keys[K_DOWN]:
-            target_vx -= fwd_x * spd; target_vy -= fwd_y * spd; target_vz -= fwd_z * spd
-        if keys[K_a] or keys[K_LEFT]:
-            target_vx -= right_x * spd; target_vz -= right_z * spd
-        if keys[K_d] or keys[K_RIGHT]:
-            target_vx += right_x * spd; target_vz += right_z * spd
-        if keys[K_SPACE]:
-            target_vy += spd
-        if keys[K_LSHIFT] or keys[K_RSHIFT] or keys[K_c]:
-            target_vy -= spd
+        # Fizik motorunu işlet (Kuvvet -> İvme -> Hız -> Konum)
+        dx, dy, dz = physics.step(
+            dt=dt,
+            throttle_up=throttle_up,
+            move_fwd=move_fwd,
+            move_back=move_back,
+            move_left=move_left,
+            move_right=move_right,
+            fwd_x=fwd_x, fwd_y=fwd_y, fwd_z=fwd_z,
+            right_x=right_x, right_z=right_z,
+            fast_mode=fast_mode
+        )
 
-        vel_x = 0.78 * vel_x + 0.22 * target_vx
-        vel_y = 0.78 * vel_y + 0.22 * target_vy
-        vel_z = 0.78 * vel_z + 0.22 * target_vz
+        # Tünel sınırları koruması
+        physics.y = max(0.2, min(3.8, physics.y))
+        physics.z = max(0.5, min(95.0, physics.z))
 
-        drone.x += vel_x
-        drone.y = max(0.5, min(3.5, drone.y + vel_y))
-        drone.z = max(0.5, min(95.0, drone.z + vel_z))
+        # Dron Modelinin dinamik tilt, pervane dönüşü ve irtifa salınımını güncelle
+        drone.x, drone.y, drone.z = physics.x, physics.y, physics.z
         drone.yaw = cam_yaw
-        drone.pitch = cam_pitch
-        drone.update(dt)
+        drone.update(
+            dt=dt,
+            vx=physics.vx,
+            vy=physics.vy,
+            vz=physics.vz,
+            throttle=physics.throttle,
+            is_airborne=not physics.is_landed
+        )
 
         if recording:
             recorded_frames += 1
@@ -211,17 +216,24 @@ def main():
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
 
+        # Render pozisyonu (İrtifa mikro-salınımı uygulanmış)
+        rx, ry, rz, ryaw, rpitch, rroll = drone.get_render_pose()
+
         if camera_mode == 0:
-            # 3. Şahıs Takip Kamerası (Dronun Arkasından)
-            cam_d, cam_h = 1.6, 0.45
-            rc_x = drone.x - fwd_x * cam_d
-            rc_y = drone.y + cam_h - fwd_y * cam_d
-            rc_z = drone.z - fwd_z * cam_d
+            # 3. Şahıs Takip Kamerası (Dronun Arkasından) + Kamera Sarsıntısı
+            cam_d, cam_h = 1.55, 0.42
+            rc_x = rx - fwd_x * cam_d + drone.cam_shake_x
+            rc_y = ry + cam_h - fwd_y * cam_d + drone.cam_shake_y
+            rc_z = rz - fwd_z * cam_d
+            eff_pitch = cam_pitch + drone.cam_shake_rot
         else:
             # 1. Şahıs Kokpit (FPV)
-            rc_x, rc_y, rc_z = drone.x, drone.y, drone.z
+            rc_x = rx + drone.cam_shake_x
+            rc_y = ry + 0.05 + drone.cam_shake_y
+            rc_z = rz
+            eff_pitch = cam_pitch + rpitch * 0.5 + drone.cam_shake_rot
 
-        glRotatef(cam_pitch, 1, 0, 0)
+        glRotatef(eff_pitch, 1, 0, 0)
         glRotatef(-cam_yaw, 0, 1, 0)
         glTranslatef(-rc_x, -rc_y, -rc_z)
 
@@ -240,7 +252,7 @@ def main():
         glDisableClientState(GL_VERTEX_ARRAY)
         glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-        # 3B Dron Çizimi
+        # 3B Fotogerçekçi Holybro X500 Dron Çizimi
         if camera_mode == 0:
             drone.draw_3d(floor_y=0.0)
         elif drone.spotlight:

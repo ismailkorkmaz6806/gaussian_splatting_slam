@@ -552,131 +552,357 @@ class OctomapEngine:
 
 
 # ======================================================================================
-# 🚁 3B FOTOGERÇEKÇİ QUADCOPTER DRON MODELİ VE UÇUŞ MOTORU
+# ======================================================================================
+# 🚁 3B FOTOGERÇEKÇİ HOLYBRO X500 QUADCOPTER MODELİ & GELİŞMİŞ UÇUŞ FİZİK MOTORU
 # ======================================================================================
 class Drone3DModel:
     """
-    3B Fotogerçekçi Quadcopter Dron Görsel Modeli, Fener Işığı ve Lazer Çizicisi.
+    3B Fotogerçekçi Holybro X500 Quadcopter Dron Görsel Modeli, Fener Işığı ve Lazer Çizicisi.
     
-    Özellikler:
-      - 4 Karbon Fiber Motor Kolu, Gövde ve İniş Ayakları
-      - Dönen Pervaneler (Canlı Animasyonlu)
-      - Ön Fener Işığı (Karanlık tüneli aydınlatan 3B şeffaf ışık konisi)
-      - TFmini Zemine İnen Lazer Noktası
-      - 3 Kamera Modu: 3. Şahıs Takip, 1. Şahıs FPV, Serbest Gezgin
+    Gelişmiş Gerçekçilik Özellikleri:
+      - 🚁 Holybro X500: Çift Karbon Şasi, Pixhawk FC (RGB LED), Intel RealSense D435, RPLIDAR A2, 4S LiPo ve T-İniş Takımları
+      - 🌪️ Yüksek Hızlı Dönen Pervaneler + Motion Blur (Rotor Diski Saydamlık Efekti)
+      - 📐 Dinamik Uçuş Eğimi (Pitch/Roll Tilt): İleri harekette nose-down pitch, yanlara harekette roll bank
+      - 🫁 İrtifa Mikro-Salınımı (PID Hover Breathing): Havada süzülürken canlı hava/motor dalgalanması (±2.5cm)
+      - 🎥 Dinamik Kamera Sarsıntısı (Air Turbulence / Engine Vibration)
+      - 💡 Ön Fener (Spotlight) ve TFmini Lazer İrtifa Çizgisi
     """
     def __init__(self):
         self.x = 0.0
         self.y = 0.0
         self.z = 0.0
-        self.yaw = 0.0        # Derece
-        self.pitch = 0.0      # Derece
-        self.roll = 0.0       # Derece
+        self.yaw = 0.0          # Derece
+        self.pitch = 0.0        # Derece (Dinamik nose-down / nose-up)
+        self.roll = 0.0         # Derece (Dinamik bank sola / sağa)
+        self.target_pitch = 0.0
+        self.target_roll = 0.0
         self.prop_angle = 0.0
-        self.scale = 0.28     # Dron boyutu (metre cinsinden gerçekçi ölçek)
-        self.view_mode = 0    # 0: 3. Şahıs Takip, 1: 1. Şahıs FPV, 2: Serbest
+        self.scale = 0.28       # Dron boyutu (metre cinsinden gerçekçi ölçek)
+        self.view_mode = 0      # 0: 3. Şahıs Takip, 1: 1. Şahıs FPV, 2: Serbest
         self.spotlight = True
         self.laser = True
         self.active = True
+        self.is_airborne = True
+        self.throttle = 0.5     # 0.0 - 1.0 arası
 
-    def update(self, dt=0.016):
-        """Pervanelerin dönme animasyonunu günceller."""
-        self.prop_angle = (self.prop_angle + 1600.0 * dt) % 360.0
+        # Canlı salınım & kamera sarsıntısı durumları
+        self.hover_offset_y = 0.0
+        self.hover_jitter_p = 0.0
+        self.hover_jitter_r = 0.0
+        self.cam_shake_x = 0.0
+        self.cam_shake_y = 0.0
+        self.cam_shake_rot = 0.0
+        self.time_accum = 0.0
+
+    def update(self, dt=0.016, vx=0.0, vy=0.0, vz=0.0, throttle=0.5, is_airborne=True,
+               override_pitch=None, override_roll=None, override_yaw=None):
+        """
+        Dron uçuş kinematiğini, pervane dönüşünü, dinamik tilt ve irtifa salınımını günceller.
+        """
+        dt = min(dt, 0.05)
+        self.time_accum += dt
+        self.is_airborne = is_airborne
+        self.throttle = max(0.0, min(1.0, throttle))
+
+        # 1. Pervane Dönüş Hızı (Throttle'a bağlı dynamic RPM)
+        if self.is_airborne:
+            base_prop_speed = 3600.0 + self.throttle * 4800.0
+        else:
+            base_prop_speed = 600.0 if self.throttle > 0.1 else 0.0
+        self.prop_angle = (self.prop_angle + base_prop_speed * dt) % 360.0
+
+        # 2. Dinamik Gövde Eğimi (Pitch / Roll Tilt)
+        if override_pitch is not None and override_roll is not None:
+            self.target_pitch = float(override_pitch)
+            self.target_roll = float(override_roll)
+        else:
+            # Hız vektörünü gövde koordinatlarına çevir (Yaw açısına göre)
+            rad_yaw = math.radians(self.yaw)
+            cos_y = math.cos(rad_yaw)
+            sin_y = math.sin(rad_yaw)
+
+            # Gövde ileri (+Z / camera fwd) ve sağ (+X / camera right) hızları
+            v_fwd   = vz * cos_y + vx * sin_y
+            v_right = vx * cos_y - vz * sin_y
+
+            # İleri hareket -> Burun aşağı (nose-down negative pitch)
+            # Geri hareket  -> Burun yukarı (nose-up positive pitch)
+            # Sağa hareket  -> Sağa yatış (+roll)
+            # Sola hareket  -> Sola yatış (-roll)
+            max_tilt = 16.0  # Maksimum ±16 derece gerçekçi eğim
+            calc_pitch = -float(np.clip(v_fwd * 3.6, -max_tilt, max_tilt))
+            calc_roll  = float(np.clip(v_right * 3.6, -max_tilt, max_tilt))
+
+            self.target_pitch = calc_pitch
+            self.target_roll  = calc_roll
+
+        if override_yaw is not None:
+            self.yaw = float(override_yaw)
+
+        # Yumuşak Lerp Enterpolasyonu (Ani sıçrama olmadan gövdenin yatışı ve doğrulması)
+        lerp_speed = min(1.0, 10.0 * dt)
+        self.pitch += (self.target_pitch - self.pitch) * lerp_speed
+        self.roll  += (self.target_roll - self.roll) * lerp_speed
+
+        # 3. İrtifa Mikro-Salınımı (PID Hover Breathing)
+        # Havada süzülürken dikeyde donmayı önleyen organik çoklu frekans dalgası (±2.5 cm)
+        if self.is_airborne:
+            t = self.time_accum
+            self.hover_offset_y = (
+                0.022 * math.sin(t * 3.6) +
+                0.012 * math.cos(t * 7.4) +
+                0.006 * math.sin(t * 13.9)
+            )
+            self.hover_jitter_p = 0.40 * math.sin(t * 4.8)
+            self.hover_jitter_r = 0.40 * math.cos(t * 5.5)
+
+            # 4. Kamera Sarsıntısı (Hava Türbülansı ve Motor Titreşimi)
+            spd = math.sqrt(vx**2 + vy**2 + vz**2)
+            shake_mag = min(1.0, (spd / 4.5) * 0.7 + self.throttle * 0.3)
+            self.cam_shake_x   = 0.006 * math.sin(t * 21.0) * shake_mag
+            self.cam_shake_y   = 0.006 * math.cos(t * 26.0) * shake_mag
+            self.cam_shake_rot = 0.16 * math.sin(t * 18.0) * shake_mag
+        else:
+            self.hover_offset_y = 0.0
+            self.hover_jitter_p = 0.0
+            self.hover_jitter_r = 0.0
+            self.cam_shake_x = 0.0
+            self.cam_shake_y = 0.0
+            self.cam_shake_rot = 0.0
+
+    def get_render_pose(self):
+        """Çizim ve kamera için mikro-salınım uygulanmış gerçek koordinatları döndürür."""
+        draw_y = self.y + (self.hover_offset_y if self.is_airborne else 0.0)
+        draw_p = self.pitch + (self.hover_jitter_p if self.is_airborne else 0.0)
+        draw_r = self.roll + (self.hover_jitter_r if self.is_airborne else 0.0)
+        return self.x, draw_y, self.z, self.yaw, draw_p, draw_r
 
     def draw_3d(self, floor_y=-1.5):
-        """OpenGL ile 3B Dron gövdesi, pervaneleri, feneri ve lazerini çizer."""
+        """OpenGL ile Fotogerçekçi Holybro X500 3B gövde, pervaneler, fener ve lazeri çizer."""
         if not self.active:
             return
+
+        rx, ry, rz, ryaw, rpitch, rroll = self.get_render_pose()
 
         glPushAttrib(GL_ALL_ATTRIB_BITS)
         glPushMatrix()
         # Dron Konum ve Dönüş Matrisi
-        glTranslatef(self.x, self.y, self.z)
-        glRotatef(-self.yaw, 0, 1, 0)
-        glRotatef(self.pitch, 1, 0, 0)
-        glRotatef(self.roll, 0, 0, 1)
+        glTranslatef(rx, ry, rz)
+        glRotatef(-ryaw, 0, 1, 0)
+        glRotatef(rpitch, 1, 0, 0)
+        glRotatef(rroll, 0, 0, 1)
         glScalef(self.scale, self.scale, self.scale)
 
-        # 1. Dron Ana Gövdesi (Koyu Titanyum Gri)
-        glColor3f(0.18, 0.20, 0.24)
+        # =====================================================================
+        # 1. HOLYBRO X500 KARBON FİBER ÇİFT ŞASİ PLAKALARI & KOLONLAR
+        # =====================================================================
+        # Alt Karbon Plaka (Chassis Bottom)
+        glColor3f(0.10, 0.11, 0.13)
         glBegin(GL_QUADS)
-        # Üst Yüz
-        glVertex3f(-0.35, 0.08, -0.35); glVertex3f(0.35, 0.08, -0.35)
-        glVertex3f(0.35, 0.08, 0.35);   glVertex3f(-0.35, 0.08, 0.35)
-        # Alt Yüz
-        glVertex3f(-0.35, -0.08, -0.35); glVertex3f(0.35, -0.08, -0.35)
-        glVertex3f(0.35, -0.08, 0.35);   glVertex3f(-0.35, -0.08, 0.35)
-        # Yanlar
-        glVertex3f(-0.35, -0.08, 0.35); glVertex3f(0.35, -0.08, 0.35)
-        glVertex3f(0.35, 0.08, 0.35);   glVertex3f(-0.35, 0.08, 0.35)
-        glVertex3f(-0.35, -0.08, -0.35); glVertex3f(0.35, -0.08, -0.35)
-        glVertex3f(0.35, 0.08, -0.35);   glVertex3f(-0.35, 0.08, -0.35)
+        glVertex3f(-0.40, -0.06, -0.40); glVertex3f(0.40, -0.06, -0.40)
+        glVertex3f(0.40, -0.06, 0.40);   glVertex3f(-0.40, -0.06, 0.40)
+        # Üst Karbon Plaka (Top Deck)
+        glVertex3f(-0.40, 0.07, -0.40); glVertex3f(0.40, 0.07, -0.40)
+        glVertex3f(0.40, 0.07, 0.40);   glVertex3f(-0.40, 0.07, 0.40)
         glEnd()
 
-        # 2. Karbon Fiber 4 Motor Kolu (X Tipi Çapraz Kollar)
-        glLineWidth(3.0)
-        glColor3f(0.10, 0.12, 0.15)
+        # Alüminyum Kolonlar (Standoffs)
+        glColor3f(0.70, 0.72, 0.75)
+        glLineWidth(2.5)
         glBegin(GL_LINES)
-        glVertex3f(-0.9, 0.04, -0.9); glVertex3f(0.9, 0.04, 0.9)
-        glVertex3f(-0.9, 0.04, 0.9);  glVertex3f(0.9, 0.04, -0.9)
+        for sx, sz in [(0.32, 0.32), (-0.32, 0.32), (0.32, -0.32), (-0.32, -0.32)]:
+            glVertex3f(sx, -0.06, sz); glVertex3f(sx, 0.07, sz)
         glEnd()
 
-        # 3. 4 Adet Motor ve Dönen Pervaneler
+        # =====================================================================
+        # 2. PİXHAWK UÇUŞ BİLGİSAYARI & RGB DURUM LEDİ
+        # =====================================================================
+        # Pixhawk Alüminyum Gövdesi (Orta kat)
+        glColor3f(0.16, 0.18, 0.22)
+        glBegin(GL_QUADS)
+        glVertex3f(-0.20, 0.072, -0.25); glVertex3f(0.20, 0.072, -0.25)
+        glVertex3f(0.20, 0.072, 0.25);   glVertex3f(-0.20, 0.072, 0.25)
+        glEnd()
+
+        # Pixhawk Parlayan RGB Durum Ledi (Canlı Yanıp Sönen Yeşil/Mavi)
+        glPointSize(7.0)
+        glBegin(GL_POINTS)
+        if self.is_airborne:
+            glColor3f(0.0, 1.0, 0.5)  # Uçuşta Yeşil
+        else:
+            glColor3f(0.0, 0.7, 1.0)  # Yerde Mavi
+        glVertex3f(0.0, 0.076, 0.08)
+        glEnd()
+
+        # =====================================================================
+        # 3. INTEL REALSENSE D435 DERİNLİK KAMERASI (Ön Burun)
+        # =====================================================================
+        # RealSense Gümüş/Gri Gövde
+        glColor3f(0.75, 0.78, 0.82)
+        glBegin(GL_QUADS)
+        glVertex3f(-0.22, 0.01, 0.42); glVertex3f(0.22, 0.01, 0.42)
+        glVertex3f(0.22, 0.06, 0.42);  glVertex3f(-0.22, 0.06, 0.42)
+        glEnd()
+        # 3 Optik Lens Noktası (Sol IR, Orta RGB, Sağ IR)
+        glPointSize(4.0)
+        glColor3f(0.1, 0.4, 0.9)
+        glBegin(GL_POINTS)
+        glVertex3f(-0.14, 0.035, 0.425)
+        glVertex3f(0.0,   0.035, 0.425)
+        glVertex3f(0.14,  0.035, 0.425)
+        glEnd()
+
+        # =====================================================================
+        # 4. RPLIDAR A2 360° LAZER TARAYICI PUCK (Üst Kat)
+        # =====================================================================
+        # Siyah Lidar Gövdesi
+        glColor3f(0.12, 0.12, 0.14)
+        glBegin(GL_QUADS)
+        glVertex3f(-0.18, 0.14, -0.18); glVertex3f(0.18, 0.14, -0.18)
+        glVertex3f(0.18, 0.14, 0.18);   glVertex3f(-0.18, 0.14, 0.18)
+        glEnd()
+        # Dönen Kırmızı Lidar Lazer Noktası
+        lidar_angle = (self.time_accum * 1800.0) % 360.0
+        l_rad = math.radians(lidar_angle)
+        lx = math.cos(l_rad) * 0.16
+        lz = math.sin(l_rad) * 0.16
+        glPointSize(4.0)
+        glColor3f(1.0, 0.2, 0.2)
+        glBegin(GL_POINTS)
+        glVertex3f(lx, 0.15, lz)
+        glEnd()
+
+        # =====================================================================
+        # 5. HOLYBRO 4S LIPO BATARYA (Alt Kat & Sarı Cırt Bant)
+        # =====================================================================
+        glColor3f(0.15, 0.15, 0.16)
+        glBegin(GL_QUADS)
+        glVertex3f(-0.16, -0.16, -0.32); glVertex3f(0.16, -0.16, -0.32)
+        glVertex3f(0.16, -0.16, 0.32);   glVertex3f(-0.16, -0.16, 0.32)
+        # Sarı Cırt Bant
+        glColor3f(0.95, 0.85, 0.10)
+        glVertex3f(-0.17, -0.165, -0.05); glVertex3f(0.17, -0.165, -0.05)
+        glVertex3f(0.17, -0.165, 0.05);   glVertex3f(-0.17, -0.165, 0.05)
+        glEnd()
+
+        # =====================================================================
+        # 6. KARBON FİBER 4 MOTOR KOLU (16mm Çapraz Borular)
+        # =====================================================================
+        glLineWidth(4.0)
+        glColor3f(0.08, 0.09, 0.11)
+        glBegin(GL_LINES)
+        glVertex3f(-0.95, 0.02, -0.95); glVertex3f(0.95, 0.02, 0.95)
+        glVertex3f(-0.95, 0.02, 0.95);  glVertex3f(0.95, 0.02, -0.95)
+        glEnd()
+
+        # =====================================================================
+        # 7. 4 ADET 2216 MOTOR VE MOTION BLUR'LU DÖNEN PERVANELER
+        # =====================================================================
         motor_pos = [
-            ( 0.9, 0.08,  0.9, (1.0, 0.2, 0.2)), # Ön Sağ (Kırmızı)
-            (-0.9, 0.08,  0.9, (1.0, 0.2, 0.2)), # Ön Sol (Kırmızı)
-            ( 0.9, 0.08, -0.9, (0.2, 0.4, 0.9)), # Arka Sağ (Mavi)
-            (-0.9, 0.08, -0.9, (0.2, 0.4, 0.9))  # Arka Sol (Mavi)
+            ( 0.95, 0.06,  0.95, (1.0, 0.25, 0.15)), # Ön Sağ (Kırmızı/Turuncu)
+            (-0.95, 0.06,  0.95, (1.0, 0.25, 0.15)), # Ön Sol (Kırmızı/Turuncu)
+            ( 0.95, 0.06, -0.95, (0.25, 0.55, 0.95)), # Arka Sağ (Mavi/Karbon)
+            (-0.95, 0.06, -0.95, (0.25, 0.55, 0.95))  # Arka Sol (Mavi/Karbon)
         ]
 
         for mx, my, mz, p_col in motor_pos:
-            glColor3f(0.12, 0.12, 0.15)
+            # Motor Gövdesi (Titanyum / Alüminyum Çan)
+            glColor3f(0.35, 0.36, 0.40)
+            glLineWidth(3.0)
             glBegin(GL_LINES)
-            glVertex3f(mx, my-0.08, mz); glVertex3f(mx, my+0.05, mz)
+            glVertex3f(mx, my - 0.08, mz); glVertex3f(mx, my + 0.04, mz)
             glEnd()
 
             glPushMatrix()
-            glTranslatef(mx, my+0.05, mz)
-            glRotatef(self.prop_angle if mx*mz > 0 else -self.prop_angle, 0, 1, 0)
-            glLineWidth(2.5)
+            glTranslatef(mx, my + 0.04, mz)
+            dir_mult = 1.0 if (mx * mz > 0) else -1.0
+            cur_p_angle = self.prop_angle * dir_mult
+            glRotatef(cur_p_angle, 0, 1, 0)
+
+            # --- A. YÜKSEK HIZLI DÖNEN PERVANE BLADE SİLUETLERİ ---
+            glLineWidth(3.0)
             glColor3f(*p_col)
             glBegin(GL_LINES)
-            glVertex3f(-0.45, 0, 0); glVertex3f(0.45, 0, 0)
-            glVertex3f(0, 0, -0.45); glVertex3f(0, 0, 0.45)
+            glVertex3f(-0.50, 0.0, 0.0); glVertex3f(0.50, 0.0, 0.0)
             glEnd()
+
+            # --- B. 🌪️ PERVANE MOTION BLUR ROTOR DİSKİ (Saydam Dönen Fan) ---
+            if self.is_airborne or self.throttle > 0.15:
+                glEnable(GL_BLEND)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                blur_alpha = 0.22 + self.throttle * 0.20
+                r_rad = 0.52
+
+                # Şeffaf Rotor Diski (Motion Blur)
+                glColor4f(p_col[0], p_col[1], p_col[2], blur_alpha)
+                glBegin(GL_TRIANGLE_FAN)
+                glVertex3f(0.0, 0.0, 0.0)
+                for deg in range(0, 361, 24):
+                    rad = math.radians(deg)
+                    glVertex3f(math.sin(rad) * r_rad, 0.0, math.cos(rad) * r_rad)
+                glEnd()
+
+                # Dış Uç Halka Vurgusu (Tip Vortex Highlight)
+                glColor4f(1.0, 1.0, 1.0, blur_alpha * 1.3)
+                glLineWidth(1.2)
+                glBegin(GL_LINE_LOOP)
+                for deg in range(0, 361, 24):
+                    rad = math.radians(deg)
+                    glVertex3f(math.sin(rad) * r_rad, 0.0, math.cos(rad) * r_rad)
+                glEnd()
+                glDisable(GL_BLEND)
+
             glPopMatrix()
 
-        # 4. 💡 Dronun Ön Feneri (Spotlight)
+        # =====================================================================
+        # 8. T-TİPİ KARBON İNİŞ TAKIMLARI (Landing Skids)
+        # =====================================================================
+        glColor3f(0.09, 0.10, 0.12)
+        glLineWidth(3.5)
+        glBegin(GL_LINES)
+        # 4 Açılı Bacak
+        glVertex3f( 0.28, -0.06,  0.22); glVertex3f( 0.38, -0.38,  0.28)
+        glVertex3f(-0.28, -0.06,  0.22); glVertex3f(-0.38, -0.38,  0.28)
+        glVertex3f( 0.28, -0.06, -0.22); glVertex3f( 0.38, -0.38, -0.28)
+        glVertex3f(-0.28, -0.06, -0.22); glVertex3f(-0.38, -0.38, -0.28)
+        # 2 Yatay Kayak Borusu
+        glVertex3f( 0.38, -0.38, -0.55); glVertex3f( 0.38, -0.38,  0.55)
+        glVertex3f(-0.38, -0.38, -0.55); glVertex3f(-0.38, -0.38,  0.55)
+        glEnd()
+
+        # =====================================================================
+        # 9. 💡 ÖN FENER IŞIĞI (Spotlight)
+        # =====================================================================
         if self.spotlight:
             glEnable(GL_BLEND)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE)
             glColor4f(1.0, 1.0, 0.85, 0.90)
             glPointSize(5.0)
             glBegin(GL_POINTS)
-            glVertex3f(0.0, 0.0, 0.38)
+            glVertex3f(0.0, 0.02, 0.44)
             glEnd()
 
             # Işık Huzmesi Konisi (Hafif Şeffaf)
             glColor4f(0.85, 0.95, 1.0, 0.08)
             glBegin(GL_TRIANGLE_FAN)
-            glVertex3f(0.0, 0.0, 0.38)
+            glVertex3f(0.0, 0.02, 0.44)
             for deg in range(0, 361, 30):
                 rad = math.radians(deg)
-                cx = math.sin(rad) * 1.5
-                cy = math.cos(rad) * 1.5
-                glVertex3f(cx, cy, 6.0)
+                cx = math.sin(rad) * 1.6
+                cy = math.cos(rad) * 1.6
+                glVertex3f(cx, cy, 6.5)
             glEnd()
 
-        # 5. 📏 TFmini Lazer İrtifa Çizgisi
+        # =====================================================================
+        # 10. 📏 TFMINI LAZER İRTİFA ÇİZGİSİ
+        # =====================================================================
         if self.laser:
-            drone_world_y = self.y
-            dist_to_ground = max(0.1, (drone_world_y - floor_y) / self.scale)
-
+            dist_to_ground = max(0.1, (ry - floor_y) / self.scale)
             glDisable(GL_BLEND)
             glLineWidth(1.8)
-            glColor4f(1.0, 0.15, 0.15, 0.85)
+            glColor4f(1.0, 0.2, 0.2, 0.85)
             glBegin(GL_LINES)
-            glVertex3f(0.0, -0.05, 0.0)
+            glVertex3f(0.0, -0.06, 0.0)
             glVertex3f(0.0, -dist_to_ground, 0.0)
             glEnd()
 
@@ -689,5 +915,322 @@ class Drone3DModel:
         glPopAttrib()
 
 
+# ======================================================================================
+# 8. 🚁 DRONE UÇUŞ FİZİK MOTORU (DronePhysicsEngine)
+# ======================================================================================
+class DronePhysicsEngine:
+    """
+    Gerçekçi quadcopter uçuş fiziği simülatörü.
 
+    Fizik Modeli:
+      - Kuvvet -> İvme -> Hız -> Konum Entegrasyonu (Newtonian Flight Dynamics)
+      - İleri/Geri ve Sağa/Sola hareketlerde gövdeye dinamik tilt (Pitch & Roll) açısı üretimi
+      - İrtifa hover PID mikro-salınımı (Canlı hava süzülmesi)
+      - Yerçekimi, Aerodinamik Sürüklenme (Drag) ve Zemin/Duvar Çarpışması
+    """
+
+    GRAVITY = 9.81          # m/s² — standart yerçekimi ivmesi
+    DRAG = 4.2              # Hava direnci katsayısı (hıza orantılı sönüm)
+    LIFT_FORCE = 15.0       # Tam gaz kaldırma kuvveti (N/kg eşdeğeri)
+    LATERAL_FORCE = 11.0    # Yatay hareket kuvveti (W/A/S/D)
+    MAX_SPEED = 8.5         # Maksimum hız (m/s)
+    CRASH_BOUNCE = 0.35     # Çarpışma sonrası geri sekme katsayısı
+    LANDING_HEIGHT = 0.08   # Zemin üzerinde iniş eşiği (m)
+
+    def __init__(self):
+        # Hız vektörü (m/s)
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+
+        # Konum
+        self.x = 0.0
+        self.y = 1.5
+        self.z = 0.0
+
+        # Dinamik Eğim (Tilt)
+        self.pitch = 0.0
+        self.roll = 0.0
+        self.yaw = 0.0
+
+        # Durum bayrakları
+        self.is_landed = True           # Zeminde mi?
+        self.is_crashed = False         # Yeni çarpışma oldu mu? (1 frame)
+        self.crash_timer = 0.0          # Çarpışma sonrası kırmızı flaş süresi
+        self.throttle = 0.0             # 0.0-1.0 arası gaz seviyesi
+        self.floor_y = -0.5             # Zemin Y koordinatı
+        self.collision_voxels = None    # OctomapEngine voksel merkezleri (N,3)
+        self.voxel_size = 0.3           # Çarpışma vokseli boyutu
+        self.flight_time = 0.0
+
+    def set_floor(self, y):
+        """Zemin yüksekliğini ayarla (FloorplanEstimator'dan alınan min_y)."""
+        self.floor_y = y
+
+    def set_collision_map(self, voxel_centers, voxel_size=0.3):
+        """OctomapEngine'den üretilen voksel merkezlerini çarpışma haritası olarak yükle."""
+        if voxel_centers is not None and len(voxel_centers) > 1000:
+            step = max(1, len(voxel_centers) // 8000)
+            self.collision_voxels = voxel_centers[::step].copy()
+        else:
+            self.collision_voxels = voxel_centers
+        self.voxel_size = max(0.2, voxel_size)
+
+    def _check_collision(self, nx, ny, nz, radius=0.35):
+        """Yeni konumda çarpışma var mı kontrol et."""
+        if self.collision_voxels is None or len(self.collision_voxels) == 0:
+            return False
+
+        threshold = self.voxel_size * 0.5 + radius
+        bx_min, bx_max = nx - threshold * 3, nx + threshold * 3
+        bz_min, bz_max = nz - threshold * 3, nz + threshold * 3
+        by_min, by_max = ny - threshold * 2, ny + threshold * 2
+
+        mask = (
+            (self.collision_voxels[:, 0] > bx_min) & (self.collision_voxels[:, 0] < bx_max) &
+            (self.collision_voxels[:, 2] > bz_min) & (self.collision_voxels[:, 2] < bz_max) &
+            (self.collision_voxels[:, 1] > by_min) & (self.collision_voxels[:, 1] < by_max)
+        )
+        nearby = self.collision_voxels[mask]
+        if len(nearby) == 0:
+            return False
+
+        dists = np.sqrt(
+            (nearby[:, 0] - nx) ** 2 +
+            (nearby[:, 1] - ny) ** 2 +
+            (nearby[:, 2] - nz) ** 2
+        )
+        return bool(np.any(dists < threshold))
+
+    def step(self, dt, throttle_up, move_fwd, move_back, move_left, move_right,
+             fwd_x, fwd_y, fwd_z, right_x, right_z, fast_mode=False):
+        """
+        Kuvvet -> İvme -> Hız -> Konum fizik entegrasyonu gerçekleştirir.
+        """
+        dt = min(dt, 0.05)
+        self.flight_time += dt
+        self.is_crashed = False
+        self.crash_timer = max(0.0, self.crash_timer - dt)
+
+        speed_mult = 2.0 if fast_mode else 1.0
+        lat_force = self.LATERAL_FORCE * speed_mult
+
+        # --- Yerçekimi ---
+        gravity_accel = -self.GRAVITY
+
+        # --- Kaldırma Kuvveti (SPACE basılıysa yukarı gaz) ---
+        self.throttle = 1.0 if throttle_up else max(0.0, self.throttle - dt * 2.8)
+        lift_accel = self.throttle * self.LIFT_FORCE
+
+        # --- Yatay İtme Kuvvetleri (Kamera Yönüne Göre) ---
+        ax, az = 0.0, 0.0
+        if move_fwd:
+            ax += fwd_x * lat_force
+            az += fwd_z * lat_force
+        if move_back:
+            ax -= fwd_x * lat_force
+            az -= fwd_z * lat_force
+        if move_left:
+            ax -= right_x * lat_force
+            az -= right_z * lat_force
+        if move_right:
+            ax += right_x * lat_force
+            az += right_z * lat_force
+
+        net_vy_accel = gravity_accel + lift_accel
+
+        # --- Hız Entegrasyonu (Euler Entegrasyonu) ---
+        self.vx += ax * dt
+        self.vy += net_vy_accel * dt
+        self.vz += az * dt
+
+        # --- Hava Direnci (Aerodinamik Damping) ---
+        drag = self.DRAG
+        self.vx -= self.vx * drag * dt
+        self.vy -= self.vy * drag * dt * 0.65
+        self.vz -= self.vz * drag * dt
+
+        # --- Hız Sınırı ---
+        speed = math.sqrt(self.vx**2 + self.vy**2 + self.vz**2)
+        max_spd = self.MAX_SPEED * speed_mult
+        if speed > max_spd:
+            scale = max_spd / speed
+            self.vx *= scale
+            self.vy *= scale
+            self.vz *= scale
+
+        # --- Yeni Konum ---
+        nx = self.x + self.vx * dt
+        ny = self.y + self.vy * dt
+        nz = self.z + self.vz * dt
+
+        # --- Zemin İniş Kontrolü ---
+        land_y = self.floor_y + self.LANDING_HEIGHT
+        if ny <= land_y:
+            ny = land_y
+            if self.vy < -1.4:
+                self.vy = abs(self.vy) * 0.15  # Yumuşak iniş sekmesi
+            else:
+                self.vy = 0.0
+            self.vx *= 0.85
+            self.vz *= 0.85
+            self.is_landed = True
+        else:
+            self.is_landed = False
+
+        # --- Voksel Duvar Çarpışması ---
+        if self._check_collision(nx, ny, nz):
+            self.vx = -self.vx * self.CRASH_BOUNCE
+            self.vy = -abs(self.vy) * self.CRASH_BOUNCE - 1.2
+            self.vz = -self.vz * self.CRASH_BOUNCE
+            nx, ny, nz = self.x, self.y, self.z
+            self.is_crashed = True
+            self.crash_timer = 0.6
+
+        self.x = nx
+        self.y = ny
+        self.z = nz
+
+        return self.x, self.y, self.z
+
+    @property
+    def speed(self):
+        """Mevcut hız büyüklüğü (m/s)."""
+        return math.sqrt(self.vx**2 + self.vy**2 + self.vz**2)
+
+
+# ======================================================================================
+# 9. 🌊 OPTİK FLOW HUD VİSUALİZER (OpticalFlowHUD)
+# ======================================================================================
+class OpticalFlowHUD:
+    """
+    Drone'un hareket vektörlerini ekran üzerinde optik akış okları olarak görselleştirir.
+
+    Optik Flow Renk Kodu:
+      🔵 Mavi  : İleri hareket
+      🔴 Kırmızı: Geri hareket
+      🟢 Yeşil : Sağ/Sol hareket
+      ⚪ Beyaz : Yukarı/Aşağı hareket
+    """
+
+    def __init__(self, grid_cols=12, grid_rows=8):
+        self.grid_cols = grid_cols
+        self.grid_rows = grid_rows
+        self.active = True
+        # Geçmiş hız (smooth için)
+        self.smooth_vx = 0.0
+        self.smooth_vy = 0.0
+        self.smooth_vz = 0.0
+
+    def update(self, vx, vy, vz, dt):
+        """Hız vektörünü yumuşat."""
+        alpha = min(1.0, dt * 8.0)
+        self.smooth_vx = (1.0 - alpha) * self.smooth_vx + alpha * vx
+        self.smooth_vy = (1.0 - alpha) * self.smooth_vy + alpha * vy
+        self.smooth_vz = (1.0 - alpha) * self.smooth_vz + alpha * vz
+
+    def draw_gl(self, win_w, win_h, cam_yaw_deg):
+        """
+        Ekran üzerinde optik flow ok ızgarasını OpenGL ile çiz.
+        cam_yaw_deg: Kameranın yaw açısı (hareket yönünü ekrana yansıtmak için)
+        """
+        speed = math.sqrt(self.smooth_vx**2 + self.smooth_vy**2 + self.smooth_vz**2)
+        if speed < 0.05:
+            return  # Çok yavaşsa çizme
+
+        # Kamera koordinat sistemine hareket vektörünü çevir (yaw)
+        yaw_rad = math.radians(cam_yaw_deg)
+        cos_y = math.cos(yaw_rad)
+        sin_y = math.sin(yaw_rad)
+
+        # Ekran X,Y bileşenleri (kamera yönüne göre)
+        screen_vx = self.smooth_vx * cos_y - self.smooth_vz * sin_y  # Yatay
+        screen_vy = -self.smooth_vy                                    # Dikey (Y ters)
+        screen_vz = self.smooth_vx * sin_y + self.smooth_vz * cos_y  # Derinlik → ok boyu
+
+        # Normalize et
+        max_v = max(speed, 0.1)
+        nx_norm = screen_vx / max_v
+        ny_norm = screen_vy / max_v
+        nz_norm = screen_vz / max_v  # Derinlik bileşeni ok boyunu etkiler
+
+        # Ok uzunluğu ve görünürlük
+        arrow_len_base = min(speed * 6.0, 35.0)
+        alpha_base = min(speed / 3.0, 0.9)
+
+        # Renk: derinlik bileşenine göre (ileri=mavi, geri=kırmızı, yan=yeşil)
+        if abs(nz_norm) > 0.5:
+            r = max(0.0, -nz_norm)       # Geri = kırmızı
+            g = 0.3
+            b = max(0.0, nz_norm)        # İleri = mavi
+        else:
+            r = 0.2
+            g = min(1.0, abs(nx_norm) * 2.0 + 0.4)   # Yan = yeşil
+            b = 0.4
+
+        # 2D ortho projection
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, win_w, win_h, 0, -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_TEXTURE_2D)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        cell_w = win_w / self.grid_cols
+        cell_h = win_h / self.grid_rows
+
+        glLineWidth(1.5)
+
+        for row in range(self.grid_rows):
+            for col in range(self.grid_cols):
+                # Ok başlangıç noktası (ızgara hücresinin merkezi)
+                cx = (col + 0.5) * cell_w
+                cy = (row + 0.5) * cell_h
+
+                # Perspektif bozulma simülasyonu: merkeze uzak hücreler daha az hareket
+                dist_cx = (col / self.grid_cols - 0.5) * 2.0  # -1 .. +1
+                dist_cy = (row / self.grid_rows - 0.5) * 2.0
+                persp = 1.0 - (abs(dist_cx) + abs(dist_cy)) * 0.15
+
+                # Ok bitiş noktası
+                ex = cx + (nx_norm + nz_norm * dist_cx * 0.5) * arrow_len_base * persp
+                ey = cy + (ny_norm + nz_norm * dist_cy * 0.5) * arrow_len_base * persp
+
+                alpha = alpha_base * persp * 0.75
+
+                glColor4f(r, g, b, alpha)
+                glBegin(GL_LINES)
+                glVertex2f(cx, cy)
+                glVertex2f(ex, ey)
+                glEnd()
+
+                # Ok ucu (küçük üçgen)
+                dx = ex - cx
+                dy = ey - cy
+                arrow_len = math.sqrt(dx*dx + dy*dy)
+                if arrow_len > 2.0:
+                    head_size = min(arrow_len * 0.35, 6.0)
+                    ux = dx / arrow_len
+                    uy = dy / arrow_len
+                    px = -uy * head_size * 0.4
+                    py = ux * head_size * 0.4
+                    glBegin(GL_TRIANGLES)
+                    glColor4f(r, g, b, alpha * 0.9)
+                    glVertex2f(ex, ey)
+                    glVertex2f(ex - ux * head_size + px, ey - uy * head_size + py)
+                    glVertex2f(ex - ux * head_size - px, ey - uy * head_size - py)
+                    glEnd()
+
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glPopAttrib()
 
