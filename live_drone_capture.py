@@ -300,81 +300,58 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             print("\n 👋 Kamera penceresi kapatıldı.")
             break
 
-        # Klavyeden basılan tuşu dinle
+        # Klavyeden basılan tuşu dinle (Hem Kamera Penceresinden hem Terminalden)
         key = cv2.waitKeyEx(12)
         key_ascii = key & 0xFF if key != -1 else -1
 
+        stdin_cmd = None
+        try:
+            import select
+            if select.select([sys.stdin], [], [], 0)[0]:
+                line = sys.stdin.readline().strip()
+                if line:
+                    stdin_cmd = line.lower()
+        except Exception:
+            pass
+
         cmd_received = False
 
-        # --- ESC VEYA LINUX ANSI OK TUŞLARI DİZİSİ YÖNETİMİ ---
-        if key in (27, ord('0')):
-            # Linux'ta ok tuşları \033[A, \033[B, \033[C, \033[D olarak gelebilir
-            if key == 27:
-                k2 = cv2.waitKeyEx(8)
-                if k2 in (91, ord('[')):
-                    k3 = cv2.waitKeyEx(8)
-                    if k3 in (65, ord('A')):    # Yukarı Ok -> Kamerayı Yukarı Eğ
-                        target_pitch_deg = min(50.0, target_pitch_deg + 2.5)
-                        cmd_received = True
-                    elif k3 in (66, ord('B')):  # Aşağı Ok -> Kamerayı Aşağı Eğ
-                        target_pitch_deg = max(-50.0, target_pitch_deg - 2.5)
-                        cmd_received = True
-                    elif k3 in (67, ord('C')):  # Sağ Ok -> Sağa Dön
-                        target_wz = -1.0; cmd_received = True
-                    elif k3 in (68, ord('D')):  # Sol Ok -> Sola Dön
-                        target_wz = 1.0; cmd_received = True
-                elif k2 == -1:
-                    send_teleop_cmd(0, 0, 0, 0, 0)
-                    print("\n 👋 ESC tuşuna basıldı, kamera akışı kapatılıyor...")
-                    break
-            else:
-                send_teleop_cmd(0, 0, 0, 0, 0)
-                print("\n 👋 Çıkış yapıldı.")
-                break
+        # --- ESC VEYA ÇIKIŞ ---
+        if key in (27, ord('0')) or stdin_cmd in ('0', 'q', 'exit'):
+            send_teleop_cmd(0, 0, 0, 0, 0)
+            print("\n 👋 Kamera akışı kapatıldı.")
+            break
 
-        # --- KAMERA YUKARI / AŞAĞI EĞME (TILT) ---
-        if key in (0x01000013, 65362) or key_ascii in (ord('i'), ord('I')):
-            target_pitch_deg = min(50.0, target_pitch_deg + 2.5)
-            cmd_received = True
-        elif key in (0x01000015, 65364) or key_ascii in (ord('k'), ord('K')):
-            target_pitch_deg = max(-50.0, target_pitch_deg - 2.5)
-            cmd_received = True
-        elif key_ascii in (ord('f'), ord('F')):
-            target_pitch_deg = 0.0
-            cmd_received = True
-
-        # --- DÖNÜŞ (YAW) ---
-        elif key in (0x01000012, 65361) or key_ascii in (ord('q'), ord('Q')):
-            target_wz = 1.0; cmd_received = True
-        elif key in (0x01000014, 65363) or key_ascii in (ord('e'), ord('E')):
-            target_wz = -1.0; cmd_received = True
-
-        # --- UÇUŞ HAREKETLERİ ---
-        elif key_ascii in (ord('w'), ord('W')):
-            target_vx = 1.6; cmd_received = True
-        elif key_ascii in (ord('s'), ord('S')):
-            target_vx = -1.6; cmd_received = True
-        elif key_ascii in (ord('a'), ord('A')):
-            target_vy = 1.2; cmd_received = True
-        elif key_ascii in (ord('d'), ord('D')):
-            target_vy = -1.2; cmd_received = True
-        elif key_ascii in (ord(' '), ord('t'), ord('T')):
-            target_vz = 1.0; cmd_received = True
-        elif key_ascii in (ord('c'), ord('C')):
-            target_vz = -1.0; cmd_received = True
-        elif key_ascii in (ord('g'), ord('G'), ord('2')):
+        # --- GPS AÇ / KAPAT (Tuş: 2 veya G) ---
+        if key_ascii in (ord('g'), ord('G'), ord('2')) or stdin_cmd in ('2', 'g', 'gps'):
             gps_enabled_state[0] = not gps_enabled_state[0]
             if px4_bridge:
                 px4_bridge.set_gps_enabled(gps_enabled_state[0])
-            status_txt = "AÇIK (7)" if gps_enabled_state[0] else "KAPALI (0 - GPS-Denied Modu)"
-            print(f"\n 🛰️ [OTOPİLOT]: GPS {status_txt} yapıldı.")
+            
+            if gps_enabled_state[0]:
+                print("\n\033[1;32m======================================================================\033[0m")
+                print("\033[1;32m 🟢 [GPS AÇILDI]: EKF2_GPS_CTRL = 7 (Dış Mekan / 3D GPS Fix Aktif)\033[0m")
+                print("\033[1;32m======================================================================\033[0m\n")
+            else:
+                print("\n\033[1;31m======================================================================\033[0m")
+                print("\033[1;31m 🔴 [GPS KAPATILDI]: EKF2_GPS_CTRL = 0 (İç Mekan GPS-Denied Devrede)\033[0m")
+                print("\033[1;31m======================================================================\033[0m\n")
             cmd_received = True
-        elif key_ascii in (ord('v'), ord('V'), ord('1')):
+
+        # --- VIO VISUAL ODOMETRY AÇ / KAPAT (Tuş: 1 veya V) ---
+        elif key_ascii in (ord('v'), ord('V'), ord('1')) or stdin_cmd in ('1', 'v', 'vio'):
             vio_enabled_state[0] = not vio_enabled_state[0]
             if px4_bridge:
                 px4_bridge.set_vision_enabled(vio_enabled_state[0])
-            status_txt = "AÇIK (15 - 30Hz Görsel Kilit)" if vio_enabled_state[0] else "KAPALI (0)"
-            print(f"\n 📷 [OTOPİLOT]: Görsel Odometri (VIO) {status_txt} yapıldı.")
+            
+            if vio_enabled_state[0]:
+                print("\n\033[1;36m======================================================================\033[0m")
+                print("\033[1;36m 🔵 [VIO GÖRSEL ODOMETRİ AKTİF]: 30 Hz EKF2 Poz Kilidi Devraldı\033[0m")
+                print("\033[1;36m======================================================================\033[0m\n")
+            else:
+                print("\n\033[1;33m======================================================================\033[0m")
+                print("\033[1;33m ⚪ [VIO BEKLEMEDE]: Görsel Odometri Durduruldu\033[0m")
+                print("\033[1;33m======================================================================\033[0m\n")
             cmd_received = True
         elif key_ascii in (ord('x'), ord('X')):
             cur_vx, cur_vy, cur_vz, cur_wy, cur_wz = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -414,8 +391,8 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             send_teleop_cmd(cmd_vx, cur_vy, cmd_vz, cur_wy, cur_wz)
             last_vel_send = time.time()
 
-        # [R] veya [3] tuşuna basıldığında veya butona tıklandığında taramayı başlat / bitir
-        if key_ascii in (ord('r'), ord('R'), ord('3')) or trigger_scan_flag[0]:
+        # [R] veya [3] tuşuna basıldığında veya terminalden girildiğinde taramayı başlat / bitir
+        if key_ascii in (ord('r'), ord('R'), ord('3')) or stdin_cmd in ('3', 'r', 'rec', 'scan') or trigger_scan_flag[0]:
             trigger_scan_flag[0] = False
             if not recording:
                 # 1. Basış: Taramayı başlat
