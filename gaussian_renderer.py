@@ -19,6 +19,16 @@ OpenGL hızlandırması ile 144+ FPS akıcılıkta ekrana çizen ANA GÖRÜNTÜL
 
 import sys
 import os
+
+# Eğer venv dışından doğrudan system python ile çalıştırıldıysa otomatik venv python'a geç
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+VENV_PY = os.path.join(CURR_DIR, "venv", "bin", "python3")
+if os.path.exists(VENV_PY) and os.path.abspath(sys.executable) != os.path.abspath(VENV_PY):
+    try:
+        import OpenGL
+    except ImportError:
+        os.execv(VENV_PY, [VENV_PY] + sys.argv)
+
 import math
 import time
 import numpy as np
