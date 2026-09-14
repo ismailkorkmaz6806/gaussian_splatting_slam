@@ -597,41 +597,36 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     glClearColor(0.04, 0.05, 0.08, 1.0)
 
     # Başlangıç Kamera Konumu ve Çekim Yönü
-    if len(auto_waypoints) > 1:
+    # Akıllı Başlangıç Kamera Konumu (Modelin Tam Karşısı ve Odak Noktası)
+    center = np.mean(xyz, axis=0) if len(xyz) > 0 else np.array([0.0, 0.0, 0.0])
+    extent = np.std(xyz, axis=0) if len(xyz) > 0 else np.array([1.0, 1.0, 1.0])
+    dist = max(2.5, float(np.max(extent) * 1.8))
+
+    if len(auto_waypoints) > 1 and np.linalg.norm(auto_waypoints[0] - center) < 30.0:
         drone_x, drone_y, drone_z = float(auto_waypoints[0][0]), float(auto_waypoints[0][1]), float(auto_waypoints[0][2])
-        dir0 = auto_waypoints[min(60, len(auto_waypoints)-1)] - auto_waypoints[0]
-        if np.linalg.norm(dir0) > 1e-3:
-            target_yaw = math.degrees(math.atan2(dir0[0], dir0[2]))
-            target_pitch = math.degrees(math.atan2(-dir0[1], math.sqrt(dir0[0]**2 + dir0[2]**2)))
-            cam_yaw, cam_pitch = target_yaw, target_pitch
-        else:
-            cam_yaw, cam_pitch = 0.0, 0.0
-            target_yaw, target_pitch = 0.0, 0.0
-    else:
-        drone_x, drone_y, drone_z = 0.0, 1.5, 0.0
-        center = np.mean(xyz, axis=0)
         dir0 = center - np.array([drone_x, drone_y, drone_z])
-        if np.linalg.norm(dir0) > 1e-3:
-            target_yaw = math.degrees(math.atan2(dir0[0], dir0[2]))
-            target_pitch = math.degrees(math.atan2(-dir0[1], math.sqrt(dir0[0]**2 + dir0[2]**2)))
-            cam_yaw, cam_pitch = target_yaw, target_pitch
-        else:
-            cam_yaw, cam_pitch = 0.0, 0.0
-            target_yaw, target_pitch = 0.0, 0.0
+        target_yaw = math.degrees(math.atan2(dir0[0], dir0[2]))
+        target_pitch = math.degrees(math.atan2(-dir0[1], math.sqrt(dir0[0]**2 + dir0[2]**2)))
+        cam_yaw, cam_pitch = target_yaw, target_pitch
+    else:
+        drone_x = float(center[0])
+        drone_y = float(center[1] + 0.8)
+        drone_z = float(center[2] - dist)
+        cam_yaw = 0.0
+        cam_pitch = -5.0
 
     # Fizik motorunu başlangıç konumuyla senkronize et
     physics.x, physics.y, physics.z = drone_x, drone_y, drone_z
     if room_bounds is not None:
         physics.set_floor(room_bounds['min_y'])
 
-
-    cam_fov = 60.0              # Görüş alanı (FOV / Zoom)
-    target_fov = 60.0           # Hedef görüş alanı (Yumuşak optik zoom)
-    auto_tour = False           # Sinematik tur aktif mi?
+    cam_fov = 60.0              # Doğal insan gözü görüş açısı (60°)
+    target_fov = 60.0
+    auto_tour = False
     tour_progress = 0.0
     tour_speed = 1.0
-    show_frustums = True        # Kamera piramitleri açık mı?
-    top_down_view = False       # Kuşbakışı modu açık mı?
+    show_frustums = False       # Başlangıçta yeşil çizgileri gizle (Daha temiz 3B görünüm)
+    top_down_view = False
     user_override_look = False  # Kullanıcı fareyle serbest bakış modunda mı?
 
     clock = pygame.time.Clock()
