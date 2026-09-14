@@ -218,6 +218,8 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
     recording = False      # Kayıt/tarama aktif mi?
     recorded_frames = []   # Taranan video karelerini bellekte tutan liste
     show_help = True       # Ekran içi kontrol kılavuz kartı (H tuşuyla açılıp kapanabilir)
+    gps_enabled_state = [True]   # Başlangıçta GPS Açık (Dış mekan/kalkış)
+    vio_enabled_state = [True]   # Görsel Odometri (30 Hz EKF2 beslemesi)
 
     win_name = "CANLI FPV DRON KOKPITI [W/A/S/D: UC | OKLAR: KAMERA | R: 3DGS | H: KILAVUZ | ESC: CIKIS]"
     cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
@@ -258,7 +260,12 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
         cv2.rectangle(overlay, (0, h - 56), (w, h), (12, 18, 26), -1)
         cv2.addWeighted(overlay, 0.82, display_frame, 0.18, 0, display_frame)
 
-        # Üst Panel Bilgileri
+        # Üst Panel Bilgileri & Durum Göstergeleri
+        gps_txt = "GPS: [ ACIK ] (G: Kapat)" if gps_enabled_state[0] else "GPS: [ KAPALI ] (G: Ac)"
+        gps_col = (0, 255, 120) if gps_enabled_state[0] else (0, 100, 255)
+        vio_txt = "VIO: [ 30Hz KILITLI ] (V: Durdur)" if vio_enabled_state[0] else "VIO: [ BEKLEMEDE ] (V: Ac)"
+        vio_col = (0, 240, 255) if vio_enabled_state[0] else (140, 160, 180)
+
         if recording:
             recorded_frames.append(frame.copy())
             cv2.circle(display_frame, (26, 23), 10, (0, 0, 255), -1)
@@ -270,8 +277,10 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             cv2.circle(display_frame, (26, 23), 9, (0, 255, 120), -1)
             cv2.putText(display_frame, "CANLI FPV KOKPIT", 
                         (48, 30), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 255, 160), 2)
-            cv2.putText(display_frame, "[R]: 3DGS Tara  |  [H]: Kilavuz  |  [ESC]: Cikis",
-                        (max(48, w - 420), 29), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 235, 250), 1)
+            
+            # Üst Barda GPS & VIO Durum Rozetleri
+            cv2.putText(display_frame, gps_txt, (max(48, w - 460), 22), cv2.FONT_HERSHEY_SIMPLEX, 0.40, gps_col, 1)
+            cv2.putText(display_frame, vio_txt, (max(48, w - 460), 38), cv2.FONT_HERSHEY_SIMPLEX, 0.40, vio_col, 1)
 
         # FPV Nişangah / Hedefleme Çaprazı (Merkezde)
         cx, cy = w // 2, h // 2
@@ -289,14 +298,14 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
         line1_str = f"Ileri: {cur_vx:+.1f} m/s  |  Yan: {cur_vy:+.1f} m/s  |  Dikey: {cur_vz:+.1f} m/s  |  Kamera Acisi: {current_pitch:+.1f}\xb0  |  Donus: {cur_wz:+.1f} rad/s"
         cv2.putText(display_frame, line1_str, (16, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 240, 220), 1)
         
-        line2_str = "UCUS: [W/S]: Ileri/Geri  [A/D]: Sola/Saga  [SPACE/C]: Yukari/Asagi  |  KAMERA: [Oklar / I-K]: Aci  [Q/E]: Don  [X]: Fren  [H]: Yardim"
+        line2_str = "UCUS: [W/S]: Ileri/Geri  [A/D]: Sola/Saga  [SPACE/C]: Yukari/Asagi  |  [G]: GPS On/Off  [V]: VIO On/Off  |  [H]: Yardim"
         cv2.putText(display_frame, line2_str, (16, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 225, 250), 1)
 
         # ---------------------------------------------------------------------
         # YARI ŞEFFAF KONTROL KILAVUZU KARTI (Sağ Üst Köşede)
         # ---------------------------------------------------------------------
         if show_help:
-            card_w, card_h = 295, 272
+            card_w, card_h = 320, 290
             card_x1, card_y1 = w - card_w - 12, 54
             card_x2, card_y2 = card_x1 + card_w, card_y1 + card_h
             sub_hud = display_frame[card_y1:card_y2, card_x1:card_x2]
@@ -323,23 +332,23 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             cv2.putText(display_frame, "X       : Havada Fren & Sabit Kal", 
                         (card_x1 + 16, card_y1 + 122), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 235, 245), 1)
 
-            # Kamera Tuşları
-            cv2.putText(display_frame, "[ KAMERA YONU & ACISI ]", 
+            # GPS & VIO Hibrit Geçiş Tuşları
+            cv2.putText(display_frame, "[ OTOPILOT & NAVIGASYON ]", 
                         (card_x1 + 10, card_y1 + 144), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 160), 1)
-            cv2.putText(display_frame, "Yukari Ok / I : Kamerayi Yukari Eg", 
-                        (card_x1 + 16, card_y1 + 164), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 240, 160), 1)
-            cv2.putText(display_frame, "Asagi Ok  / K : Kamerayi Asagi Eg", 
-                        (card_x1 + 16, card_y1 + 182), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 240, 160), 1)
-            cv2.putText(display_frame, "Q / E / Sol-Sag: Sola / Saga Don", 
-                        (card_x1 + 16, card_y1 + 200), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 235, 245), 1)
-            cv2.putText(display_frame, "F             : Kamerayi Duzle (0 deg)", 
-                        (card_x1 + 16, card_y1 + 218), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 240, 160), 1)
+            cv2.putText(display_frame, "G : GPS Ac / Kapat (Gps-Denied)", 
+                        (card_x1 + 16, card_y1 + 164), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 240, 255), 1)
+            cv2.putText(display_frame, "V : Visual Odometry Ac / Kapat", 
+                        (card_x1 + 16, card_y1 + 182), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 240, 255), 1)
 
-            # Harita Tuşları
-            cv2.putText(display_frame, "[ HARITA & SISTEM ]", 
-                        (card_x1 + 10, card_y1 + 240), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 160), 1)
-            cv2.putText(display_frame, "R : 3B Taramayi Baslat/Bitir | ESC: Cikis", 
-                        (card_x1 + 16, card_y1 + 258), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (200, 220, 240), 1)
+            # Kamera & Harita Tuşları
+            cv2.putText(display_frame, "[ KAMERA & 3B HARITA ]", 
+                        (card_x1 + 10, card_y1 + 204), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 160), 1)
+            cv2.putText(display_frame, "Oklar / I-K   : Kamerayi Eg  [F]: Sifirla", 
+                        (card_x1 + 16, card_y1 + 224), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (255, 240, 160), 1)
+            cv2.putText(display_frame, "Q / E         : Sola / Saga Don (Yaw)", 
+                        (card_x1 + 16, card_y1 + 242), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (220, 235, 245), 1)
+            cv2.putText(display_frame, "R             : 3B Tara & Harita Uret", 
+                        (card_x1 + 16, card_y1 + 260), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 255, 180), 1)
 
         # Görüntüyü pencerede göster
         cv2.imshow(win_name, display_frame)
@@ -408,8 +417,22 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             target_vy = -1.2; cmd_received = True
         elif key_ascii in (ord(' '), ord('t'), ord('T')):
             target_vz = 1.0; cmd_received = True
-        elif key_ascii in (ord('c'), ord('C'), ord('g'), ord('G')):
+        elif key_ascii in (ord('c'), ord('C')):
             target_vz = -1.0; cmd_received = True
+        elif key_ascii in (ord('g'), ord('G')):
+            gps_enabled_state[0] = not gps_enabled_state[0]
+            if px4_bridge:
+                px4_bridge.set_gps_enabled(gps_enabled_state[0])
+            status_txt = "AÇIK (7)" if gps_enabled_state[0] else "KAPALI (0 - GPS-Denied Modu)"
+            print(f"\n 🛰️ [OTOPİLOT]: GPS {status_txt} yapıldı.")
+            cmd_received = True
+        elif key_ascii in (ord('v'), ord('V')):
+            vio_enabled_state[0] = not vio_enabled_state[0]
+            if px4_bridge:
+                px4_bridge.set_vision_enabled(vio_enabled_state[0])
+            status_txt = "AÇIK (15 - 30Hz Görsel Kilit)" if vio_enabled_state[0] else "KAPALI (0)"
+            print(f"\n 📷 [OTOPİLOT]: Görsel Odometri (VIO) {status_txt} yapıldı.")
+            cmd_received = True
         elif key_ascii in (ord('x'), ord('X')):
             cur_vx, cur_vy, cur_vz, cur_wy, cur_wz = 0.0, 0.0, 0.0, 0.0, 0.0
             target_vx, target_vy, target_vz, target_wz = 0.0, 0.0, 0.0, 0.0

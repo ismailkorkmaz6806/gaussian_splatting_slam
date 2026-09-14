@@ -44,6 +44,8 @@ class PX4VisionBridge:
         self._current_ned_pose = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self._lock = threading.Lock()
         self._thread = None
+        self.gps_enabled = True
+        self.vision_streaming = True
 
     def connect(self):
         """PX4 SITL otopilotuna bağlanır."""
@@ -61,6 +63,40 @@ class PX4VisionBridge:
             print(f"❌ PX4 MAVLink Bağlantı Hatası: {e}")
             self.is_connected = False
             return False
+
+    def set_px4_param_int(self, param_name, param_value):
+        """PX4 EKF2 parametresini anlık olarak MAVLink üzerinden değiştirir."""
+        if not self.is_connected or self.mav is None:
+            return False
+        try:
+            param_id = param_name.encode('utf-8')[:16]
+            self.mav.mav.param_set_send(
+                1, # target_system
+                1, # target_component
+                param_id,
+                float(param_value),
+                mavutil.mavlink.MAV_PARAM_TYPE_INT32
+            )
+            return True
+        except Exception as e:
+            print(f"⚠️ MAVLink Parametre Değiştirme Hatası ({param_name}): {e}")
+            return False
+
+    def set_gps_enabled(self, enable: bool):
+        """GPS'i otopilotta açar (7) veya tamamen devre dışı bırakır (0)."""
+        val = 7 if enable else 0
+        self.gps_enabled = enable
+        self.set_px4_param_int("EKF2_GPS_CTRL", val)
+        durum = "AÇIK (7)" if enable else "KAPALI (0 - GPS-Denied)"
+        print(f" 🛰️ [PX4 EKF2 GPS]: {durum}")
+
+    def set_vision_enabled(self, enable: bool):
+        """Görsel Odometriyi (VIO) EKF2'de açar (15) veya devre dışı bırakır (0)."""
+        val = 15 if enable else 0
+        self.vision_streaming = enable
+        self.set_px4_param_int("EKF2_EV_CTRL", val)
+        durum = "AÇIK (15 - 30 Hz EKF2 Kilidi)" if enable else "KAPALI (0)"
+        print(f" 📷 [PX4 EKF2 VIO]: {durum}")
 
     def update_slam_pose(self, x_cam, y_cam, z_cam, roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
         """
@@ -105,7 +141,7 @@ class PX4VisionBridge:
 
     def send_pose_now(self):
         """MAVLink VISION_POSITION_ESTIMATE ve ODOMETRY mesajlarını basar."""
-        if not self.is_connected or self.mav is None:
+        if not self.is_connected or self.mav is None or not self.vision_streaming:
             return
 
         with self._lock:
