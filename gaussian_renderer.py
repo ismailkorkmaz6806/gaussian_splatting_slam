@@ -44,9 +44,11 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 import ctypes
 import OpenGL
+OpenGL.USE_ACCELERATE = False
 OpenGL.ERROR_CHECKING = False
 OpenGL.ERROR_LOGGING = False
 OpenGL.CONTEXT_CHECKING = False
+import OpenGL.raw.GL.VERSION.GL_1_1 as raw_gl
 
 import pygame
 from pygame.locals import *
@@ -1214,7 +1216,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         glDisable(GL_LIGHTING)
         glColor4f(0.18, 0.28, 0.42, 0.25)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_grid)
-        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+        raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
         glDrawArrays(GL_LINES, 0, grid_n)
         glDisableClientState(GL_VERTEX_ARRAY)
@@ -1236,7 +1238,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glLineWidth(2.0)
             glColor4f(0.1, 0.95, 0.35, 0.6)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_traj)
-            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
             glDrawArrays(GL_LINE_STRIP, 0, traj_n)
             glDisableClientState(GL_VERTEX_ARRAY)
@@ -1249,11 +1251,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # 🧊 OctoMap İçi Dolu 3B Voksel Küpleri (Solid 3D Cubes) / 🔮 3DGS Nokta Render
         if octomap_engine.active and vbo_octo_xyz is not None and octo_line_count > 0:
             glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_xyz)
-            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_rgba)
-            glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_COLOR_ARRAY)
 
             glDrawArrays(GL_TRIANGLES, 0, octo_line_count)
@@ -1269,11 +1271,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glPointSize(effective_point_size)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
-            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-            glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_COLOR_ARRAY)
 
             glDrawArrays(GL_POINTS, 0, num_splats)

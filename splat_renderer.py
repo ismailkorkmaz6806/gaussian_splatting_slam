@@ -24,9 +24,11 @@ os.environ["SHIM_MCCOMPAT"] = "0x000000001"
 os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
 
 import OpenGL
+OpenGL.USE_ACCELERATE = False
 OpenGL.ERROR_CHECKING = False
 OpenGL.ERROR_LOGGING = False
 OpenGL.CONTEXT_CHECKING = False
+import OpenGL.raw.GL.VERSION.GL_1_1 as raw_gl
 
 import pygame
 from pygame.locals import *
@@ -662,7 +664,7 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
         glDisable(GL_LIGHTING)
         glColor4f(0.18, 0.28, 0.42, 0.35)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_grid)
-        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+        raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
         glDrawArrays(GL_LINES, 0, grid_n)
         glDisableClientState(GL_VERTEX_ARRAY)
@@ -677,7 +679,7 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
             glLineWidth(2.5)
             glColor3f(0.1, 0.95, 0.35)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_traj)
-            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+            raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
             glDrawArrays(GL_LINE_STRIP, 0, traj_n)
             glDisableClientState(GL_VERTEX_ARRAY)
@@ -697,15 +699,15 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
             glEnable(GL_LIGHTING)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+        raw_gl.glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_cols)
-        glColorPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
+        raw_gl.glColorPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_COLOR_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-        glNormalPointer(GL_FLOAT, 0, ctypes.c_void_p(0))
+        raw_gl.glNormalPointer(GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_NORMAL_ARRAY)
 
         if render_mode == "mesh" and vbo_faces is not None:
