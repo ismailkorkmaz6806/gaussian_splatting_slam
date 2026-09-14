@@ -19,10 +19,14 @@ import time
 import ctypes
 import numpy as np
 
-# Windows Optimus / Hybrid Laptop için NVIDIA GPU Zorlaması
+# Windows / Linux Optimus Hybrid Laptop için Donanım Ayarları
 os.environ["SHIM_MCCOMPAT"] = "0x000000001"
 os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
-os.environ["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
+
+import OpenGL
+OpenGL.ERROR_CHECKING = False
+OpenGL.ERROR_LOGGING = False
+OpenGL.CONTEXT_CHECKING = False
 
 import pygame
 from pygame.locals import *
@@ -658,7 +662,7 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
         glDisable(GL_LIGHTING)
         glColor4f(0.18, 0.28, 0.42, 0.35)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_grid)
-        glVertexPointer(3, GL_FLOAT, 0, None)
+        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
         glDrawArrays(GL_LINES, 0, grid_n)
         glDisableClientState(GL_VERTEX_ARRAY)
@@ -673,7 +677,7 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
             glLineWidth(2.5)
             glColor3f(0.1, 0.95, 0.35)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_traj)
-            glVertexPointer(3, GL_FLOAT, 0, None)
+            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
             glDrawArrays(GL_LINE_STRIP, 0, traj_n)
             glDisableClientState(GL_VERTEX_ARRAY)
@@ -693,15 +697,15 @@ def view_mast3r_map(ply_path="mast3r_map.ply"):
             glEnable(GL_LIGHTING)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_verts)
-        glVertexPointer(3, GL_FLOAT, 0, None)
+        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_cols)
-        glColorPointer(3, GL_FLOAT, 0, None)
+        glColorPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_COLOR_ARRAY)
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_norms)
-        glNormalPointer(GL_FLOAT, 0, None)
+        glNormalPointer(GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_NORMAL_ARRAY)
 
         if render_mode == "mesh" and vbo_faces is not None:

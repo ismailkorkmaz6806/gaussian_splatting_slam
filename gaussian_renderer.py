@@ -23,30 +23,20 @@ import math
 import time
 import numpy as np
 
-# Linux / Windows Optimus Hibrit Laptoplar için Harici NVIDIA RTX GPU'yu Zorlama
+# Linux / Windows Optimus Hibrit Laptoplar için Harici NVIDIA RTX GPU ve Fallback Ayarları
 os.environ["SHIM_MCCOMPAT"] = "0x000000001"
-os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
-os.environ["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
 os.environ["__GL_SYNC_TO_VBLANK"] = "0"
 os.environ["vblank_mode"] = "0"
 os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
-# ✅ Wayland kaynaklı performans çöküşünü (10 FPS) önlemek için X11 zorlaması
 os.environ["SDL_VIDEODRIVER"] = "x11"
 os.environ["GDK_BACKEND"] = "x11"
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 
-# Linux üzerinde libGL/libGLX yüklenmeden önce NVIDIA PRIME Offload ortam değişkenlerini garantileme
-if sys.platform.startswith("linux") and os.environ.get("_3DGS_GPU_CHECK") != "1":
-    os.environ["_3DGS_GPU_CHECK"] = "1"
-    os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
-    os.environ["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
-    os.environ["__GL_SYNC_TO_VBLANK"] = "0"
-    os.environ["vblank_mode"] = "0"
-    os.environ["SDL_VIDEODRIVER"] = "x11"
-    try:
-        os.execvpe(sys.executable, [sys.executable] + sys.argv, os.environ)
-    except Exception:
-        pass
+import ctypes
+import OpenGL
+OpenGL.ERROR_CHECKING = False
+OpenGL.ERROR_LOGGING = False
+OpenGL.CONTEXT_CHECKING = False
 
 import pygame
 from pygame.locals import *
@@ -490,22 +480,25 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     joystick = None
     joystick_name = "Yok"
     if pygame.joystick.get_count() > 0:
-        joystick = pygame.joystick.Joystick(0)
-        joystick.init()
-        joystick_name = joystick.get_name()
-        print(f" 🎮 Kumanda Bulundu: {joystick_name}")
-        print(f"    Axis: {joystick.get_numaxes()} | Buton: {joystick.get_numbuttons()} | Hat: {joystick.get_numhats()}")
+        try:
+            joystick = pygame.joystick.Joystick(0)
+            joystick_name = joystick.get_name()
+            print(f" 🎮 Kumanda Bulundu: {joystick_name}")
+            print(f"    Axis: {joystick.get_numaxes()} | Buton: {joystick.get_numbuttons()} | Hat: {joystick.get_numhats()}")
+        except Exception as e:
+            print(f" ⚠️ Kumanda başlatma uyarısı: {e}")
     else:
         print(" ⌨️  Kumanda bulunamadı — sadece klavye/fare ile kontrol.")
 
     # MSAA kapatıldı (nokta bulutlarında gereksiz GPU yükünü önler)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLEBUFFERS, 0)
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLESAMPLES, 0)
-    # Linux Wayland/XWayland V-Sync tampon takılmasını önleme
     pygame.display.gl_set_attribute(pygame.GL_SWAP_CONTROL, 0)
-    pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL | RESIZABLE)
-    # OPENGL modunda key.get_pressed() için event.pump() çağrılmalı
-    # key.set_repeat kaldırıldı: get_pressed() kendi başına sürekli tuş okur
+    try:
+        pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL | RESIZABLE)
+    except pygame.error as e:
+        print(f" ⚠️ İlk GL modu başarısız ({e}), standart mod deneniyor...")
+        pygame.display.set_mode((win_w, win_h), DOUBLEBUF | OPENGL)
     pygame.key.set_repeat(0)
 
     gpu_vendor = glGetString(GL_VENDOR).decode(errors='replace')
@@ -1211,7 +1204,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         glDisable(GL_LIGHTING)
         glColor4f(0.18, 0.28, 0.42, 0.25)
         glBindBuffer(GL_ARRAY_BUFFER, vbo_grid)
-        glVertexPointer(3, GL_FLOAT, 0, None)
+        glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
         glEnableClientState(GL_VERTEX_ARRAY)
         glDrawArrays(GL_LINES, 0, grid_n)
         glDisableClientState(GL_VERTEX_ARRAY)
@@ -1233,7 +1226,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glLineWidth(2.0)
             glColor4f(0.1, 0.95, 0.35, 0.6)
             glBindBuffer(GL_ARRAY_BUFFER, vbo_traj)
-            glVertexPointer(3, GL_FLOAT, 0, None)
+            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
             glDrawArrays(GL_LINE_STRIP, 0, traj_n)
             glDisableClientState(GL_VERTEX_ARRAY)
@@ -1246,11 +1239,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         # 🧊 OctoMap İçi Dolu 3B Voksel Küpleri (Solid 3D Cubes) / 🔮 3DGS Nokta Render
         if octomap_engine.active and vbo_octo_xyz is not None and octo_line_count > 0:
             glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_xyz)
-            glVertexPointer(3, GL_FLOAT, 0, None)
+            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_octo_rgba)
-            glColorPointer(4, GL_FLOAT, 0, None)
+            glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_COLOR_ARRAY)
 
             glDrawArrays(GL_TRIANGLES, 0, octo_line_count)
@@ -1266,11 +1259,11 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             glPointSize(effective_point_size)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
-            glVertexPointer(3, GL_FLOAT, 0, None)
+            glVertexPointer(3, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_VERTEX_ARRAY)
 
             glBindBuffer(GL_ARRAY_BUFFER, vbo_rgba)
-            glColorPointer(4, GL_FLOAT, 0, None)
+            glColorPointer(4, GL_FLOAT, 0, ctypes.c_void_p(0))
             glEnableClientState(GL_COLOR_ARRAY)
 
             glDrawArrays(GL_POINTS, 0, num_splats)
