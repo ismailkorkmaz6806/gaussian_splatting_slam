@@ -98,7 +98,7 @@ else
     fi
 
     if [ ! -z "$QGC_BIN" ]; then
-        echo -e "${GREEN}🎮 [2/3] QGroundControl Açılıyor...${NC}"
+        echo -e "${GREEN}🎮 [2/2] QGroundControl Açılıyor...${NC}"
         if [[ "$QGC_BIN" == *.AppImage ]]; then
             "$QGC_BIN" --appimage-extract-and-run > /tmp/qgc.log 2>&1 &
         else
@@ -106,16 +106,60 @@ else
         fi
         QGC_PID=$!
         sleep 2
-        echo -e "${GREEN}✅ QGroundControl açıldı (PX4'e otomatik bağlanıyor)!${NC}"
+        echo -e "${GREEN}✅ QGroundControl açıldı (PX4'e otomatik bağlandı)!${NC}"
     else
         echo -e "${YELLOW}⚠️ QGroundControl.AppImage bulunamadı, bu adım atlanıyor.${NC}"
     fi
 fi
 
 # -------------------------------------------------------------------------
-# 3. ADIM: Canlı FPV Kokpiti & MAVLink EKF2 Köprüsü
+# SİMÜLASYON KONTROL PANELİ (Terminal)
 # -------------------------------------------------------------------------
-echo -e "${GREEN}🎥 [3/3] MAVLink Görsel Odometri Köprüsü ve Canlı FPV Kokpiti Açılıyor...${NC}"
-python3 "$SCRIPT_DIR/live_drone_capture.py" gazebo
+echo ""
+echo -e "${CYAN}======================================================================${NC}"
+echo -e "${GREEN}   ✨ SİMÜLASYON VE QGROUNDCONTROL HAZIR!${NC}"
+echo -e "${CYAN}======================================================================${NC}"
+echo -e " 📍 Gazebo Penceresi : ${GREEN}AÇIK${NC} (Dünya: buyuk_ev, Model: x500_vision)"
+echo -e " 📍 QGroundControl   : ${GREEN}AÇIK${NC} (UDP 14550 Bağlı)"
+echo -e " 📍 GPS Durumu       : ${GREEN}AÇIK (Kalkışa Hazır)${NC}"
+echo ""
+echo -e " 💡 ${YELLOW}QGroundControl MAVLink Console'dan veya buradan parametre verebilirsin:${NC}"
+echo "    • GPS Kapatmak için : param set EKF2_GPS_CTRL 0"
+echo "    • GPS Açmak için    : param set EKF2_GPS_CTRL 7"
+echo ""
 
-echo -e "${GREEN}Uçuş tamamlandı.${NC}"
+while true; do
+    echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+    echo "  [1] 🔴 GPS'i KAPAT (param set EKF2_GPS_CTRL 0)"
+    echo "  [2] 🟢 GPS'i AÇ   (param set EKF2_GPS_CTRL 7)"
+    echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
+    echo "  [0] ❌ Simülasyonu Kapat ve Çık"
+    echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+    read -p "Seçiminiz [0-3]: " CMD_SECIM
+
+    case $CMD_SECIM in
+        1)
+            echo -e "${YELLOW}🛰️ GPS Kapatılıyor (EKF2_GPS_CTRL 0)...${NC}"
+            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.set_gps_enabled(False)" 2>/dev/null || true
+            echo -e "${RED}✅ GPS Kapatıldı (GPS-Denied Modu Aktif).${NC}"
+            ;;
+        2)
+            echo -e "${YELLOW}🛰️ GPS Açılıyor (EKF2_GPS_CTRL 7)...${NC}"
+            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.set_gps_enabled(True)" 2>/dev/null || true
+            echo -e "${GREEN}✅ GPS Açıldı (3D Fix Aktif).${NC}"
+            ;;
+        3)
+            echo -e "${GREEN}🎥 Canlı FPV ve 3DGS Haritalama Kokpiti Açılıyor...${NC}"
+            python3 "$SCRIPT_DIR/live_drone_capture.py" gazebo
+            ;;
+        0|"q"|"Q")
+            echo -e "${YELLOW}Simülasyon sonlandırılıyor...${NC}"
+            break
+            ;;
+        *)
+            echo -e "${RED}Geçersiz seçim!${NC}"
+            ;;
+    esac
+done
+
+exit 0
