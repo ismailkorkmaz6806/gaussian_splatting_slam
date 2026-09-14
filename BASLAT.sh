@@ -58,14 +58,16 @@ while true; do
             echo ""
             echo "  [1] USB Web Kamerası (/dev/video0)"
             echo "  [2] Gerçek Dron Canlı Yayını (RTSP / Wi-Fi / Fiber)"
-            echo "  [3] 🎮 Sanal Dron Canlı Yayın Simülasyonu"
+            echo "  [3] 🏡 Gazebo + PX4 SITL Büyük Ev (Tek Tık Otonom Uçuş & 3DGS)"
             echo "  [4] 🦇 DARPA SubT Gerçek Mağara Dronu"
+            echo "  [5] 🎮 Sanal Dron Canlı Yayın Simülasyonu"
             echo ""
-            read -p "Seçiminiz [1-4]: " K_SECIM
-            if [ "$K_SECIM" == "4" ]; then
+            read -p "Seçiminiz [1-5]: " K_SECIM
+            if [ "$K_SECIM" == "3" ]; then
+                ./SIMULASYON_BASLAT.sh
+            elif [ "$K_SECIM" == "4" ]; then
                 python3 dron_tunel_simulatoru.py
-
-            elif [ "$K_SECIM" == "3" ]; then
+            elif [ "$K_SECIM" == "5" ]; then
                 python3 simulated_drone_streamer.py &
                 STREAM_PID=$!
                 sleep 2
