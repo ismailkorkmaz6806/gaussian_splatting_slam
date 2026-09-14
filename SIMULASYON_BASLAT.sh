@@ -64,7 +64,10 @@ else
         cd "$PX4_DIR"
         export DISPLAY="${DISPLAY:-:0}"
         export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-        PX4_GZ_WORLD=buyuk_ev make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
+        export PX4_GZ_WORLD=buyuk_ev
+        # Dronu evin dışındaki yeşil çim bahçeye (Y=-12m), kapıya bakacak şekilde (Yaw=90 deg) yerleştir
+        export PX4_GZ_MODEL_POSE="0,-12,0.2,0,0,1.5708"
+        make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
         PX4_PID=$!
         cd "$SCRIPT_DIR"
         
