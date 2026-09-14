@@ -70,6 +70,7 @@ class PX4VisionBridge:
             return False
         try:
             param_id = param_name.encode('utf-8')[:16]
+            # Hem autopilot component'e (1) hem broadcast (0) gönder
             self.mav.mav.param_set_send(
                 1, # target_system
                 1, # target_component
@@ -77,17 +78,53 @@ class PX4VisionBridge:
                 float(param_value),
                 mavutil.mavlink.MAV_PARAM_TYPE_INT32
             )
+            # NSH Konsoluna doğrudan 'param set' komutu da bas
+            self.send_nsh_command(f"param set {param_name} {int(param_value)}")
             return True
         except Exception as e:
             print(f"⚠️ MAVLink Parametre Değiştirme Hatası ({param_name}): {e}")
             return False
 
+    def send_nsh_command(self, cmd_str):
+        """PX4 NSH terminaline sıfır gecikmeli MAVLink shell komutu iletir."""
+        if not self.is_connected or self.mav is None:
+            return
+        try:
+            data = (cmd_str + "\n").encode('utf-8')
+            payload = list(data) + [0] * max(0, 70 - len(data))
+            self.mav.mav.serial_control_send(
+                mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+                mavutil.mavlink.SERIAL_CONTROL_FLAG_RESPOND | mavutil.mavlink.SERIAL_CONTROL_FLAG_EXCLUSIVE,
+                0, 0,
+                min(70, len(data)),
+                payload[:70]
+            )
+        except Exception:
+            pass
+
     def set_gps_enabled(self, enable: bool):
         """GPS'i otopilotta açar (7) veya tamamen devre dışı bırakır (0)."""
         val = 7 if enable else 0
         self.gps_enabled = enable
+        
+        # 1. Yöntem: Parametre Güncelleme (EKF2_GPS_CTRL)
         self.set_px4_param_int("EKF2_GPS_CTRL", val)
-        durum = "AÇIK (7)" if enable else "KAPALI (0 - GPS-Denied)"
+        
+        # 2. Yöntem: MAV_CMD_INJECT_FAILURE (Donanımsal GPS Sinyal Kesme Simülasyonu)
+        try:
+            fail_type = 0.0 if enable else 1.0  # 0: OK (Normal), 1: OFF (Sinyal Kesildi)
+            self.mav.mav.command_long_send(
+                1, 1,
+                420, # MAV_CMD_INJECT_FAILURE
+                0,
+                1.0, # param1: FAIL_UNIT_SENSOR_GPS
+                fail_type, # param2: FAIL_TYPE
+                0.0, 0.0, 0.0, 0.0, 0.0
+            )
+        except Exception:
+            pass
+
+        durum = "AÇIK (7 - GPS Fix Aktif)" if enable else "KAPALI (0 - GPS-Denied Modu Devrede)"
         print(f" 🛰️ [PX4 EKF2 GPS]: {durum}")
 
     def set_vision_enabled(self, enable: bool):
@@ -95,7 +132,7 @@ class PX4VisionBridge:
         val = 15 if enable else 0
         self.vision_streaming = enable
         self.set_px4_param_int("EKF2_EV_CTRL", val)
-        durum = "AÇIK (15 - 30 Hz EKF2 Kilidi)" if enable else "KAPALI (0)"
+        durum = "AÇIK (15 - 30 Hz EKF2 Görsel Kilit)" if enable else "KAPALI (0)"
         print(f" 📷 [PX4 EKF2 VIO]: {durum}")
 
     def update_slam_pose(self, x_cam, y_cam, z_cam, roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
