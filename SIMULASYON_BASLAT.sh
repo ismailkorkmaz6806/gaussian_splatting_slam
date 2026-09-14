@@ -62,12 +62,14 @@ else
     echo -e "${GREEN}🚀 [1/3] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor (buyuk_ev)...${NC}"
     if [ -d "$PX4_DIR" ]; then
         cd "$PX4_DIR"
+        export DISPLAY="${DISPLAY:-:0}"
+        export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
         PX4_GZ_WORLD=buyuk_ev make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
         PX4_PID=$!
         cd "$SCRIPT_DIR"
         
-        echo -e "${YELLOW}⏳ Gazebo ve PX4 otopilotunun ayağa kalkması bekleniyor (yaklaşık 7 sn)...${NC}"
-        for i in {7..1}; do
+        echo -e "${YELLOW}⏳ Gazebo ve PX4 otopilotunun ayağa kalkması bekleniyor (yaklaşık 8 sn)...${NC}"
+        for i in {8..1}; do
             echo -ne " -> Simülatör hazırlanıyor... [${i}s]\r"
             sleep 1
         done
