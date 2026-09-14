@@ -218,15 +218,53 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
     recording = False      # Kayıt/tarama aktif mi?
     recorded_frames = []   # Taranan video karelerini bellekte tutan liste
     show_help = True       # Ekran içi kontrol kılavuz kartı (H tuşuyla açılıp kapanabilir)
-    gps_enabled_state = [True]   # Başlangıçta GPS Açık (Dış mekan/kalkış)
-    vio_enabled_state = [True]   # Görsel Odometri (30 Hz EKF2 beslemesi)
+    gps_enabled_state = [True]   # Başlangıçta GPS Açık (Dış mekan kalkışı)
+    vio_enabled_state = [False]  # Başlangıçta VIO beklemede (Kullanıcı kalkıştan sonra açacak)
+    trigger_scan_flag = [False]  # Mouse tıklamasıyla tarama tetikleme
+    status_toast_msg = ["Kalkış sonrası [1. VIO AÇ] ardından [2. GPS KAPAT] butonlarına basın."]
+    status_toast_time = [time.time()]
 
     win_name = "CANLI FPV DRON KOKPITI [W/A/S/D: UC | OKLAR: KAMERA | R: 3DGS | H: KILAVUZ | ESC: CIKIS]"
     cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
+
+    def _on_mouse(event, mx, my, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # 1. Buton: VIO Aç/Kapat (X: 180-360, Y: 6-40)
+            if 180 <= mx <= 360 and 6 <= my <= 40:
+                vio_enabled_state[0] = not vio_enabled_state[0]
+                if px4_bridge:
+                    px4_bridge.set_vision_enabled(vio_enabled_state[0])
+                st = "AÇILDI (30Hz EKF2 Görsel Kilit)" if vio_enabled_state[0] else "KAPATILDI (0)"
+                status_toast_msg[0] = f"📷 1. VIO Görsel Odometri {st}!"
+                status_toast_time[0] = time.time()
+                print(f"\n 🖱️ [BUTON]: {status_toast_msg[0]}")
+
+            # 2. Buton: GPS Kapat / Aç (X: 370-580, Y: 6-40)
+            elif 370 <= mx <= 580 and 6 <= my <= 40:
+                gps_enabled_state[0] = not gps_enabled_state[0]
+                if px4_bridge:
+                    px4_bridge.set_gps_enabled(gps_enabled_state[0])
+                st = "AÇILDI (EKF2_GPS_CTRL 7)" if gps_enabled_state[0] else "KAPATILDI (EKF2_GPS_CTRL 0 - GPS-Denied)"
+                status_toast_msg[0] = f"🛰️ 2. GPS {st}!"
+                status_toast_time[0] = time.time()
+                print(f"\n 🖱️ [BUTON]: {status_toast_msg[0]}")
+
+            # 3. Buton: 3DGS Harita Tara (X: 590-760, Y: 6-40)
+            elif 590 <= mx <= 760 and 6 <= my <= 40:
+                trigger_scan_flag[0] = True
+
+            # 4. Buton: Yardım Kartı (X: 770-870, Y: 6-40)
+            elif 770 <= mx <= 870 and 6 <= my <= 40:
+                show_help_state_val = not show_help
+                # show_help döngü içinde güncellenecek
+
+    cv2.setMouseCallback(win_name, _on_mouse)
+
     print("\n ✅ Canlı FPV Kokpit açıldı!")
     print("    UÇUŞ   : [W/S]: İleri/Geri | [A/D]: Sola/Sağa Kay | [SPACE/C]: Yüksel/Alçal | [X]: Fren")
+    print("    BUTON  : [1. VIO AÇ (V)] -> [2. GPS KAPAT (G)] -> [3. 3DGS TARA (R)]")
     print("    KAMERA : [Yukarı/Aşağı Ok]: Yukarı/Aşağı Eğ | [Q/E veya Sol/Sağ]: Dön | [F]: Düzle")
-    print("    DİĞER  : [R]: 3DGS Tara | [H]: Kılavuzu Aç/Kapat | [ESC]: Çıkış")
+    print("    DİĞER  : [H]: Kılavuzu Aç/Kapat | [ESC]: Çıkış")
 
     cur_vx, cur_vy, cur_vz, cur_wy, cur_wz = 0.0, 0.0, 0.0, 0.0, 0.0
     target_vx, target_vy, target_vz, target_wz = 0.0, 0.0, 0.0, 0.0
@@ -256,31 +294,49 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
         # 2B FPV KOKPİT ARAYÜZÜ VE HUD ÇİZİMİ
         # ---------------------------------------------------------------------
         overlay = display_frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 46), (12, 18, 26), -1)
-        cv2.rectangle(overlay, (0, h - 56), (w, h), (12, 18, 26), -1)
-        cv2.addWeighted(overlay, 0.82, display_frame, 0.18, 0, display_frame)
+        cv2.rectangle(overlay, (0, 0), (w, 48), (10, 15, 22), -1)
+        cv2.rectangle(overlay, (0, h - 56), (w, h), (10, 15, 22), -1)
+        cv2.addWeighted(overlay, 0.85, display_frame, 0.15, 0, display_frame)
 
-        # Üst Panel Bilgileri & Durum Göstergeleri
-        gps_txt = "GPS: [ ACIK ] (G: Kapat)" if gps_enabled_state[0] else "GPS: [ KAPALI ] (G: Ac)"
-        gps_col = (0, 255, 120) if gps_enabled_state[0] else (0, 100, 255)
-        vio_txt = "VIO: [ 30Hz KILITLI ] (V: Durdur)" if vio_enabled_state[0] else "VIO: [ BEKLEMEDE ] (V: Ac)"
-        vio_col = (0, 240, 255) if vio_enabled_state[0] else (140, 160, 180)
+        # ---------------------------------------------------------------------
+        # İNTERAKTİF TIKLANABİLİR ÜST BUTONLAR
+        # ---------------------------------------------------------------------
+        # Buton 1: VIO (Visual Odometry) Butonu
+        vio_on = vio_enabled_state[0]
+        b1_bg = (30, 80, 20) if vio_on else (35, 40, 50)
+        b1_border = (0, 255, 120) if vio_on else (0, 200, 255)
+        b1_txt = "1. VIO: AKTIF (30Hz)" if vio_on else "1. VIO AC (Tikla/V)"
+        cv2.rectangle(display_frame, (180, 7), (360, 41), b1_bg, -1)
+        cv2.rectangle(display_frame, (180, 7), (360, 41), b1_border, 2 if vio_on else 1)
+        cv2.putText(display_frame, b1_txt, (190, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255) if vio_on else (200, 230, 255), 1)
 
-        if recording:
-            recorded_frames.append(frame.copy())
-            cv2.circle(display_frame, (26, 23), 10, (0, 0, 255), -1)
-            cv2.putText(display_frame, f"TARANIYOR: {len(recorded_frames)} Kare Alindi",
-                        (48, 30), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 240, 255), 2)
-            cv2.putText(display_frame, "[R]: Taramayi Bitir & 3B Harita Uret",
-                        (max(48, w - 350), 29), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 180), 1)
-        else:
-            cv2.circle(display_frame, (26, 23), 9, (0, 255, 120), -1)
-            cv2.putText(display_frame, "CANLI FPV KOKPIT", 
-                        (48, 30), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 255, 160), 2)
-            
-            # Üst Barda GPS & VIO Durum Rozetleri
-            cv2.putText(display_frame, gps_txt, (max(48, w - 460), 22), cv2.FONT_HERSHEY_SIMPLEX, 0.40, gps_col, 1)
-            cv2.putText(display_frame, vio_txt, (max(48, w - 460), 38), cv2.FONT_HERSHEY_SIMPLEX, 0.40, vio_col, 1)
+        # Buton 2: GPS Kapat / Aç Butonu
+        gps_on = gps_enabled_state[0]
+        b2_bg = (20, 60, 20) if gps_on else (20, 20, 80)
+        b2_border = (0, 255, 100) if gps_on else (0, 60, 255)
+        b2_txt = "2. GPS: ACIK (Tikla/G)" if gps_on else "2. GPS: KAPALI (0)"
+        cv2.rectangle(display_frame, (370, 7), (580, 41), b2_bg, -1)
+        cv2.rectangle(display_frame, (370, 7), (580, 41), b2_border, 2 if not gps_on else 1)
+        cv2.putText(display_frame, b2_txt, (380, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255) if not gps_on else (200, 240, 220), 1)
+
+        # Buton 3: 3DGS Harita Tara Butonu
+        b3_bg = (0, 0, 90) if recording else (60, 20, 70)
+        b3_border = (0, 0, 255) if recording else (220, 0, 255)
+        b3_txt = "3. BITIR & HARITALA" if recording else "3. 3DGS TARA (R)"
+        cv2.rectangle(display_frame, (590, 7), (760, 41), b3_bg, -1)
+        cv2.rectangle(display_frame, (590, 7), (760, 41), b3_border, 2 if recording else 1)
+        cv2.putText(display_frame, b3_txt, (600, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1)
+
+        # Sol Üst Başlık / Rozet
+        cv2.circle(display_frame, (22, 24), 8, (0, 255, 120), -1)
+        cv2.putText(display_frame, "FPV KOKPIT", (38, 29), cv2.FONT_HERSHEY_DUPLEX, 0.52, (0, 255, 180), 1)
+
+        # Anlık Durum Bildirim Bandı (Toast Message)
+        if time.time() - status_toast_time[0] < 4.0:
+            toast_text = status_toast_msg[0]
+            cv2.rectangle(display_frame, (16, 56), (min(w - 16, 16 + len(toast_text) * 11 + 20), 84), (15, 20, 30), -1)
+            cv2.rectangle(display_frame, (16, 56), (min(w - 16, 16 + len(toast_text) * 11 + 20), 84), (0, 220, 255), 1)
+            cv2.putText(display_frame, toast_text, (26, 76), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
 
         # FPV Nişangah / Hedefleme Çaprazı (Merkezde)
         cx, cy = w // 2, h // 2
@@ -471,8 +527,9 @@ def run_drone_capture(camera_source=0, target_keyframes=20):
             send_teleop_cmd(cmd_vx, cur_vy, cmd_vz, cur_wy, cur_wz)
             last_vel_send = time.time()
 
-        # [R] tuşuna basıldığında taramayı başlat / bitir
-        if key_ascii in (ord('r'), ord('R')):
+        # [R] tuşuna basıldığında veya butona tıklandığında taramayı başlat / bitir
+        if key_ascii in (ord('r'), ord('R')) or trigger_scan_flag[0]:
+            trigger_scan_flag[0] = False
             if not recording:
                 # 1. Basış: Taramayı başlat
                 recording = True
