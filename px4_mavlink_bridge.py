@@ -102,6 +102,62 @@ class PX4VisionBridge:
         except Exception:
             pass
 
+    def arm(self, force=True):
+        """Dronu ARM eder (Motorları çalıştırır)."""
+        if not self.is_connected or self.mav is None:
+            return False
+        try:
+            force_param = 21196.0 if force else 0.0
+            self.mav.mav.command_long_send(
+                1, 1,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                1.0, force_param, 0.0, 0.0, 0.0, 0.0, 0.0
+            )
+            # NSH üzerinden de doğrudan tetikle (sıfır gecikme)
+            self.send_nsh_command("commander arm -f" if force else "commander arm")
+            print(" 🚀 [PX4 MAVLink]: ARM Komutu Gönderildi!")
+            return True
+        except Exception as e:
+            print(f"❌ ARM Hatası: {e}")
+            return False
+
+    def disarm(self):
+        """Dronu DISARM eder."""
+        if not self.is_connected or self.mav is None:
+            return False
+        try:
+            self.mav.mav.command_long_send(
+                1, 1,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            )
+            print(" 🛑 [PX4 MAVLink]: DISARM Komutu Gönderildi!")
+            return True
+        except Exception as e:
+            print(f"❌ DISARM Hatası: {e}")
+            return False
+
+    def configure_indoor_preflight(self):
+        """GPS-denied / Mağara ortamında ARM etmeyi engelleyen kontrolleri kaldırır ve Kumandadan ARM'ı etkinleştirir."""
+        self.send_nsh_command("param set COM_ARM_WO_GPS 2")
+        self.send_nsh_command("param set CBRK_IO_SAFETY 22027")
+        self.send_nsh_command("param set CBRK_SUPPLY_CHK 894281")
+        self.send_nsh_command("param set CBRK_USB_CHK 197848")
+        self.send_nsh_command("param set COM_ARM_MAG_STR 0")
+        self.send_nsh_command("param set COM_ARM_MAG_ANG -1")
+        self.send_nsh_command("param set EKF2_MAG_CHECK 0")
+        self.send_nsh_command("param set EKF2_MAG_TYPE 1")
+        self.send_nsh_command("param set NAV_RCL_ACT 0")
+        self.send_nsh_command("param set NAV_DLL_ACT 0")
+        self.send_nsh_command("param set EKF2_EV_CTRL 0")
+        self.send_nsh_command("param set COM_RCL_EX_T 10")
+        # Kumanda & Joystick ARM Etkinleştirme (COM_RC_IN_MODE=3: Hem RC Kumanda hem QGC/Joystick kabul edilir)
+        self.send_nsh_command("param set COM_RC_IN_MODE 3")
+        self.send_nsh_command("param set MAN_ARM_GESTURE 1")
+        print(" ✅ PX4 Mağara / Kumanda ARM Kilitleri Açıldı (COM_RC_IN_MODE=3, MAN_ARM_GESTURE=1, EKF2_MAG_CHECK=0)!")
+
     def set_gps_enabled(self, enable: bool):
         """GPS'i otopilotta açar (7) veya tamamen devre dışı bırakır (0)."""
         val = 7 if enable else 0
@@ -109,6 +165,10 @@ class PX4VisionBridge:
         
         # 1. Yöntem: Parametre Güncelleme (EKF2_GPS_CTRL)
         self.set_px4_param_int("EKF2_GPS_CTRL", val)
+        
+        # GPS Kapatıldığında VIO'nun açık olduğundan emin ol
+        if not enable:
+            self.set_vision_enabled(True)
         
         # 2. Yöntem: MAV_CMD_INJECT_FAILURE (Donanımsal GPS Sinyal Kesme Simülasyonu)
         try:

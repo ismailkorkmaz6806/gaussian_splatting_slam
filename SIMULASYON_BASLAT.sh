@@ -30,8 +30,7 @@ if [ -f "$SCRIPT_DIR/venv/bin/activate" ]; then
     source "$SCRIPT_DIR/venv/bin/activate"
 fi
 
-# NVIDIA RTX Optimizasyonu
-export __NV_PRIME_RENDER_OFFLOAD=1
+# Grafik ve Senkronizasyon Ayarları
 export __GL_SYNC_TO_VBLANK=0
 export vblank_mode=0
 
@@ -56,31 +55,58 @@ trap cleanup EXIT INT TERM
 # -------------------------------------------------------------------------
 # 1. ADIM: Gazebo & PX4 SITL Otopilotu
 # -------------------------------------------------------------------------
-if pgrep -x "px4" > /dev/null; then
-    echo -e "${YELLOW}ℹ️  PX4 SITL zaten çalışıyor.${NC}"
+pkill -9 px4 2>/dev/null || true
+pkill -9 -f "gz sim" 2>/dev/null || true
+rm -f /tmp/px4_lock* /tmp/px4-sock* /tmp/px4_sitl.log 2>/dev/null || true
+rm -f "$PX4_DIR/build/px4_sitl_default/rootfs/parameters"* 2>/dev/null || true
+
+# Dünyayı Belirle (Özel Organik Kaya Mağarası / Eşyalı Ev)
+echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+echo -e " 🌍 ${GREEN}Simülasyon Dünyasını Seçin:${NC}"
+echo -e "   [1] 🦇 ${YELLOW}Özel Organik Kaya Mağarası${NC} (benim_magaram - Dron Giriş Önünde, Keşif Kampı, Kutular)"
+echo -e "   [2] 🏠 ${CYAN}Eşyalı ve Dokulu Büyük Ev${NC} (buyuk_ev - 0 Kasma, %100 Hız, 280k+ Splat)"
+echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+read -t 10 -p "Seçiminiz [1/2, varsayılan: 1]: " WORLD_CHOICE
+if [ "$WORLD_CHOICE" == "2" ]; then
+    SECILEN_DUNYA="buyuk_ev"
+    DUNYA_POSE="0,-12,0.2,0,0,1.5708"
+    DUNYA_BASLIK="Eşyalı ve Dokulu Büyük Ev"
 else
-    echo -e "${GREEN}🚀 [1/3] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor (buyuk_ev)...${NC}"
-    if [ -d "$PX4_DIR" ]; then
-        cd "$PX4_DIR"
-        export DISPLAY="${DISPLAY:-:0}"
-        export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-        export PX4_GZ_WORLD=buyuk_ev
-        # Dronu evin dışındaki yeşil çim bahçeye (Y=-12m), kapıya bakacak şekilde (Yaw=90 deg) yerleştir
-        export PX4_GZ_MODEL_POSE="0,-12,0.2,0,0,1.5708"
-        make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
-        PX4_PID=$!
-        cd "$SCRIPT_DIR"
-        
-        echo -e "${YELLOW}⏳ Gazebo ve PX4 otopilotunun ayağa kalkması bekleniyor (yaklaşık 8 sn)...${NC}"
-        for i in {8..1}; do
-            echo -ne " -> Simülatör hazırlanıyor... [${i}s]\r"
-            sleep 1
-        done
-        echo -e "\n${GREEN}✅ Gazebo & PX4 başarıyla açıldı!${NC}"
-    else
-        echo -e "${RED}❌ HATA: $PX4_DIR dizini bulunamadı!${NC}"
-        exit 1
-    fi
+    SECILEN_DUNYA="benim_magaram"
+    DUNYA_POSE="-3.0,0.0,0.20,0,0,0"
+    DUNYA_BASLIK="Temiz Doğal Kaya Tüneli (Girişin 3m Önü Başlangıç)"
+fi
+
+echo -e "\n${GREEN}🚀 [1/2] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor: ${DUNYA_BASLIK}...${NC}"
+if [ -d "$PX4_DIR" ]; then
+    cd "$PX4_DIR"
+    export DISPLAY="${DISPLAY:-:0}"
+    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+    export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$PX4_DIR/Tools/simulation/gz/worlds/aws_small_house_world/models:$PX4_DIR/Tools/simulation/gz/models:/home/ismail/gaussian_splatting_slam/gazebo_cave_world/worlds/models"
+    export PX4_GZ_WORLD="$SECILEN_DUNYA"
+    export PX4_GZ_MODEL_POSE="$DUNYA_POSE"
+    make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
+    PX4_PID=$!
+    cd "$SCRIPT_DIR"
+    
+    echo -e "${YELLOW}⏳ Gazebo ve PX4 otopilotunun ayağa kalkması bekleniyor (yaklaşık 8 sn)...${NC}"
+    for i in {8..1}; do
+        echo -ne " -> Simülatör hazırlanıyor... [${i}s]\r"
+        sleep 1
+    done
+    echo -e "\n${GREEN}✅ Gazebo & PX4 başarıyla açıldı!${NC}"
+    # Kapalı alan / GPS-denied ARM kilidini otomatik kaldır
+    python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.configure_indoor_preflight()" 2>/dev/null || true
+    # Kamerayı otomatik dronun arkasına kilitle (Mağara içine girince dronu kaybetmemek için)
+    (
+        sleep 3
+        gz service -s /gui/follow --reqtype gz.msgs.StringMsg --reptype gz.msgs.Boolean --timeout 2000 --req 'data: "x500_vision_0"' >/dev/null 2>&1 || \
+        gz service -s /gui/follow --reqtype gz.msgs.StringMsg --reptype gz.msgs.Boolean --timeout 2000 --req 'data: "x500_vision"' >/dev/null 2>&1
+        gz service -s /gui/follow/offset --reqtype gz.msgs.Vector3d --reptype gz.msgs.Boolean --timeout 2000 --req 'x: -2.2, y: 0.0, z: 0.8' >/dev/null 2>&1
+    ) &
+else
+    echo -e "${RED}❌ HATA: $PX4_DIR dizini bulunamadı!${NC}"
+    exit 1
 fi
 
 # -------------------------------------------------------------------------
@@ -122,13 +148,9 @@ echo ""
 echo -e "${CYAN}======================================================================${NC}"
 echo -e "${GREEN}   ✨ SİMÜLASYON VE QGROUNDCONTROL HAZIR!${NC}"
 echo -e "${CYAN}======================================================================${NC}"
-echo -e " 📍 Gazebo Penceresi : ${GREEN}AÇIK${NC} (Dünya: buyuk_ev, Model: x500_vision)"
+echo -e " 📍 Gazebo Penceresi : ${GREEN}AÇIK${NC} (Dünya: $SECILEN_DUNYA, Model: x500_vision)"
 echo -e " 📍 QGroundControl   : ${GREEN}AÇIK${NC} (UDP 14550 Bağlı)"
-echo -e " 📍 GPS Durumu       : ${GREEN}AÇIK (Kalkışa Hazır)${NC}"
-echo ""
-echo -e " 💡 ${YELLOW}QGroundControl MAVLink Console'dan veya buradan parametre verebilirsin:${NC}"
-echo "    • GPS Kapatmak için : param set EKF2_GPS_CTRL 0"
-echo "    • GPS Açmak için    : param set EKF2_GPS_CTRL 7"
+echo -e " 📍 Kalkış / Arm     : ${GREEN}KİLİTLER AÇILDI (Hazır)${NC}"
 echo ""
 
 while true; do
@@ -136,9 +158,11 @@ while true; do
     echo "  [1] 🔴 GPS'i KAPAT (param set EKF2_GPS_CTRL 0)"
     echo "  [2] 🟢 GPS'i AÇ   (param set EKF2_GPS_CTRL 7)"
     echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
+    echo "  [4] 🚀 Dronu ARM ET (Motorları Başlat)"
+    echo "  [5] 🛑 Dronu DISARM ET (Motorları Durdur)"
     echo "  [0] ❌ Simülasyonu Kapat ve Çık"
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    read -p "Seçiminiz [0-3]: " CMD_SECIM
+    read -p "Seçiminiz [0-5]: " CMD_SECIM
 
     case $CMD_SECIM in
         1)
@@ -154,6 +178,14 @@ while true; do
         3)
             echo -e "${GREEN}🎥 Canlı FPV ve 3DGS Haritalama Kokpiti Açılıyor...${NC}"
             python3 "$SCRIPT_DIR/live_drone_capture.py" gazebo
+            ;;
+        4)
+            echo -e "${GREEN}🚀 Dron ARM Ediliyor...${NC}"
+            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.arm(force=True)" 2>/dev/null || true
+            ;;
+        5)
+            echo -e "${YELLOW}🛑 Dron DISARM Ediliyor...${NC}"
+            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.disarm()" 2>/dev/null || true
             ;;
         0|"q"|"Q")
             echo -e "${YELLOW}Simülasyon sonlandırılıyor...${NC}"

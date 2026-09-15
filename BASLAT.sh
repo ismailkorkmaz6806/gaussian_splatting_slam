@@ -40,14 +40,12 @@ while true; do
     echo "  [1] 📹 Canlı Dron / Kamera ile Tara & 3B Harita Çıkar"
     echo "  [2] 🎬 Bir MP4 Videosunu 3B Modele Dönüştür"
     echo "  [3] 🏢 Ofis 3B Haritasını Görüntüle (gaussian_scene.ply)"
-    echo "  [4] 🎮 3B Dron & Tünel Simülatörü (Klavye ile Serbest Uçuş)"
-    echo "  [5] 🚇 Eski Tünel 3B Haritasını Görüntüle (drone_scene.ply)"
-    echo "  [6] 📄 Tünel İnceleme ve PDF/HTML Raporu Üret"
-    echo "  [7] 🦇 DARPA SubT Mağara Görevi (Simülasyon & 3B Harita)"
+    echo "  [4] 🚇 Eski Tünel 3B Haritasını Görüntüle (drone_scene.ply)"
+    echo "  [5] 📄 Tünel İnceleme ve PDF/HTML Raporu Üret"
     echo "  [0] ❌ Çıkış"
     echo ""
     echo -e "${CYAN}=============================================================${NC}"
-    read -p "Lütfen bir işlem seçin [0-7]: " SECIM
+    read -p "Lütfen bir işlem seçin [0-5]: " SECIM
 
     case $SECIM in
         1)
@@ -59,20 +57,10 @@ while true; do
             echo "  [1] USB Web Kamerası (/dev/video0)"
             echo "  [2] Gerçek Dron Canlı Yayını (RTSP / Wi-Fi / Fiber)"
             echo "  [3] 🏡 Gazebo + PX4 SITL Büyük Ev (Tek Tık Otonom Uçuş & 3DGS)"
-            echo "  [4] 🦇 DARPA SubT Gerçek Mağara Dronu"
-            echo "  [5] 🎮 Sanal Dron Canlı Yayın Simülasyonu"
             echo ""
-            read -p "Seçiminiz [1-5]: " K_SECIM
+            read -p "Seçiminiz [1-3]: " K_SECIM
             if [ "$K_SECIM" == "3" ]; then
                 ./SIMULASYON_BASLAT.sh
-            elif [ "$K_SECIM" == "4" ]; then
-                python3 dron_tunel_simulatoru.py
-            elif [ "$K_SECIM" == "5" ]; then
-                python3 simulated_drone_streamer.py &
-                STREAM_PID=$!
-                sleep 2
-                python3 live_drone_capture.py http://127.0.0.1:8554/drone_stream
-                kill $STREAM_PID 2>/dev/null || true
             elif [ "$K_SECIM" == "2" ]; then
                 read -p "RTSP / HTTP Yayın Linki (Varsayılan: rtsp://192.168.1.100:8554/stream): " RTSP_URL
                 if [ -z "$RTSP_URL" ]; then
@@ -114,15 +102,6 @@ while true; do
         4)
             clear
             echo -e "${CYAN}=============================================================${NC}"
-            echo -e "${GREEN}  🎮 3B DRON & TÜNEL UÇUŞ SİMÜLATÖRÜ AÇILIYOR (144+ FPS)...${NC}"
-            echo -e "${CYAN}=============================================================${NC}"
-            echo ""
-            python3 dron_tunel_simulatoru.py
-            read -p "Devam etmek için Enter'a basın..."
-            ;;
-        5)
-            clear
-            echo -e "${CYAN}=============================================================${NC}"
             echo -e "${GREEN}  🚇 ESKİ TÜNEL HARİTASI AÇILIYOR...${NC}"
             echo -e "${CYAN}=============================================================${NC}"
             echo ""
@@ -133,7 +112,7 @@ while true; do
             fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
-        6)
+        5)
             clear
             echo -e "${CYAN}=============================================================${NC}"
             echo -e "${GREEN}  📄 TÜNEL İNCELEME RAPORU ÜRETİLİYOR...${NC}"
@@ -145,34 +124,12 @@ while true; do
             fi
             read -p "Devam etmek için Enter'a basın..."
             ;;
-        7)
-            clear
-            echo -e "${CYAN}=============================================================${NC}"
-            echo -e "${GREEN}  🦇 DARPA SUBT MAĞARA GÖREVİ${NC}"
-            echo -e "${CYAN}=============================================================${NC}"
-            echo ""
-            echo "  [1] 🚁 Otopilotlu Mağara Simülasyonunu Başlat (Veri Topla)"
-            echo "  [2] 🔮 Çıkarılan 3B Mağara Haritasını Görüntüle"
-            echo ""
-            read -p "Seçiminiz [1-2]: " MAGARA_SECIM
-            if [ "$MAGARA_SECIM" == "2" ]; then
-                if [ -f "cave_scene.ply" ]; then
-                    python3 gaussian_renderer.py cave_scene.ply
-                else
-                    echo -e "${RED}❌ Hata: cave_scene.ply bulunamadı! Önce 1. seçenekle tarama yapmalısınız.${NC}"
-                fi
-            else
-                python3 dron_tunel_simulatoru.py
-            fi
-
-            read -p "Devam etmek için Enter'a basın..."
-            ;;
         0)
             echo -e "${YELLOW}Görüşmek üzere! Çıkış yapılıyor...${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}Geçersiz seçim! Lütfen 0-8 arasında bir rakam girin.${NC}"
+            echo -e "${RED}Geçersiz seçim! Lütfen 0-5 arasında bir rakam girin.${NC}"
             sleep 1
             ;;
     esac

@@ -1037,7 +1037,9 @@ class DronePhysicsEngine:
             ax += right_x * lat_force
             az += right_z * lat_force
 
-        net_vy_accel = gravity_accel + lift_accel
+        # Dron havadayken otomatik hover desteği (sürekli yere çakılmayı önler)
+        hover_lift = self.GRAVITY * 0.96 if not self.is_landed else 0.0
+        net_vy_accel = gravity_accel + lift_accel + (hover_lift if not throttle_up else 0.0)
 
         # --- Hız Entegrasyonu (Euler Entegrasyonu) ---
         self.vx += ax * dt

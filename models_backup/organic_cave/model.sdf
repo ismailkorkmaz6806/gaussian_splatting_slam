@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="organic_cave">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision_floor">
+        <pose>20 0 0 0 0 0</pose>
+        <geometry><plane><normal>0 0 1</normal><size>120 120</size></plane></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>model://organic_cave/meshes/organic_cave.obj</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

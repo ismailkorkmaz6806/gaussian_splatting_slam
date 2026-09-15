@@ -1,0 +1,7 @@
+newmtl CaveRock
+Ka 0.85 0.85 0.85
+Kd 0.90 0.90 0.90
+Ks 0.10 0.10 0.10
+d 1.0
+illum 2
+map_Kd RockLayered0034_1_L.jpg

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>MASt3R-3DGS Tünel Teşhis ve İnceleme Raporu</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0c1017; color: #e6edf3; margin: 0; padding: 25px; }
+        .container { max-width: 900px; margin: 0 auto; background: #161b22; border-radius: 12px; padding: 30px; border: 1px solid #30363d; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+        .header { border-bottom: 2px solid #00aaff; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 22px; color: #00d2ff; }
+        .badge { background: #238636; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+        .card { background: #0d1117; padding: 18px; border-radius: 8px; border: 1px solid #30363d; text-align: center; }
+        .card-val { font-size: 26px; font-weight: bold; color: #58a6ff; margin: 6px 0; }
+        .card-lbl { font-size: 12px; color: #8b949e; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #30363d; font-size: 14px; }
+        th { background: #21262d; color: #8b949e; }
+        .status-box { padding: 16px; border-radius: 8px; background: rgba(0, 170, 255, 0.1); border: 1px solid #0088cc; margin-bottom: 25px; font-size: 14px; }
+        .btn-print { background: #00d2ff; color: #000; padding: 10px 20px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; float: right; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🚁 MASt3R-3DGS TÜNEL VE YAPI İNCELEME RAPORU</h1>
+                <div style="color:#8b949e; font-size:13px; margin-top:4px;">Tarih: 15.09.2026 11:37:04 | Model: gaussian_scene_cache.npz</div>
+            </div>
+            <button class="btn-print" onclick="window.print()">🖨️ PDF / YAZDIR</button>
+        </div>
+
+        <div class="status-box">
+            <b>🔍 DENETİM ÖZETİ:</b> Yapay zeka ve metrik derinlik analizi sonucunda taranan alanın <b>6,036,986 adet</b> 3B yüzey noktası çıkarılmış, mimari boyutlar ve kritik geçitler haritalandırılmıştır.
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <div class="card-lbl">Toplam Tünel Uzunluğu</div>
+                <div class="card-val">9.11 m</div>
+                <div style="font-size:12px; color:#8b949e;">Z Ekseni Derinliği</div>
+            </div>
+            <div class="card">
+                <div class="card-lbl">Ortalama Genişlik</div>
+                <div class="card-val">11.25 m</div>
+                <div style="font-size:12px; color:#8b949e;">X Ekseni Açıklığı</div>
+            </div>
+            <div class="card">
+                <div class="card-lbl">Tavan Yüksekliği</div>
+                <div class="card-val">4.06 m</div>
+                <div style="font-size:12px; color:#8b949e;">Y Ekseni Net İrtifa</div>
+            </div>
+            <div class="card">
+                <div class="card-lbl">Net Taban Alanı</div>
+                <div class="card-val">87.1 m²</div>
+                <div style="font-size:12px; color:#8b949e;">Kullanılabilir Alan</div>
+            </div>
+            <div class="card">
+                <div class="card-lbl">Tahmini Hacim</div>
+                <div class="card-val">353.3 m³</div>
+                <div style="font-size:12px; color:#8b949e;">Kübik Mekan Hacmi</div>
+            </div>
+            <div class="card">
+                <div class="card-lbl">Kritik Darboğaz Sayısı</div>
+                <div class="card-val" style="color: #00ff88">0 Bölge</div>
+                <div style="font-size:12px; color:#8b949e;">Geçiş Riski &lt; 1.3m</div>
+            </div>
+        </div>
+
+        <h3 style="color:#58a6ff; margin-top:25px;">⚠️ DARBOĞAZ VE RİSKLİ GEÇİT ANALİZİ</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Bölge</th>
+                    <th>Tünel Konumu (Z)</th>
+                    <th>Açıklık / Genişlik</th>
+                    <th>Yükseklik</th>
+                    <th>Durum</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan='5' style='text-align:center; color:#00ff88;'>✅ Tünel boyunca kritik bir darboğaz tespit edilmedi (Tüm geçitler > 1.3m).</td></tr>
+            </tbody>
+        </table>
+
+        <div style="margin-top:35px; text-align:center; color:#8b949e; font-size:12px; border-top:1px solid #30363d; padding-top:15px;">
+            MASt3R Vision Foundation & 3D Gaussian Splatting Otonom Denetim Motoru ile Üretilmiştir.
+        </div>
+    </div>
+</body>
+</html>

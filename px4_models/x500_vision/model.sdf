@@ -43,7 +43,7 @@
       <sensor name='lidar' type='gpu_lidar'>
         <gz_frame_id>lidar_sensor_link</gz_frame_id>
         <pose>0 0 0 3.14 0 0</pose>
-        <update_rate>50</update_rate>
+        <update_rate>10</update_rate>
         <ray>
           <scan>
             <horizontal>
@@ -66,9 +66,113 @@
           </range>
         </ray>
         <always_on>1</always_on>
-        <visualize>true</visualize>
+        <visualize>false</visualize>
       </sensor>
     </link>
+
+    <!-- 🔦 Dron Ön Arama ve Keşif Projektörü (Drone Spotlight) -->
+    <link name="drone_spotlight_link">
+      <pose relative_to="base_link">0.2 0 0.05 0 0 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>0.00001</ixx>
+          <iyy>0.00001</iyy>
+          <izz>0.00001</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="spotlight_bulb">
+        <geometry>
+          <sphere><radius>0.02</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>1 1 0.9 1</ambient>
+          <diffuse>1 1 0.9 1</diffuse>
+          <emissive>1 1 0.9 1</emissive>
+        </material>
+      </visual>
+      <light name="drone_spotlight" type="spot">
+        <cast_shadows>0</cast_shadows>
+        <pose>0 0 0 0 0 0</pose>
+        <diffuse>1 1 1 1</diffuse>
+        <specular>0.2 0.2 0.2 1</specular>
+        <attenuation>
+          <range>25</range>
+          <constant>0.2</constant>
+          <linear>0.05</linear>
+          <quadratic>0.005</quadratic>
+        </attenuation>
+        <spot>
+          <inner_angle>0.6</inner_angle>
+          <outer_angle>1.2</outer_angle>
+          <falloff>1.0</falloff>
+        </spot>
+        <direction>1 0 -0.15</direction>
+      </light>
+    </link>
+    <joint name="spotlight_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>drone_spotlight_link</child>
+    </joint>
+
+    <!-- 📡 Dron Ön 3B Katı Hal (Solid-State) Lidar Sensörü (Forward-Facing 3D LiDAR) -->
+    <link name="forward_lidar_link">
+      <pose relative_to="base_link">0.15 0 0.18 0 0.08 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia>
+          <ixx>0.0001</ixx>
+          <iyy>0.0001</iyy>
+          <izz>0.0001</izz>
+        </inertia>
+      </inertial>
+      <visual name="forward_lidar_visual">
+        <geometry>
+          <box><size>0.04 0.05 0.03</size></box>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="forward_lidar" type="gpu_lidar">
+        <gz_frame_id>forward_lidar_link</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>10</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>200</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.74</min_angle>
+              <max_angle>0.74</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>24</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.45</min_angle>
+              <max_angle>0.45</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.2</min>
+            <max>30.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <topic>/forward_lidar</topic>
+      </sensor>
+    </link>
+    <joint name="forward_lidar_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>forward_lidar_link</child>
+    </joint>
+
     <plugin
       filename="gz-sim-odometry-publisher-system"
       name="gz::sim::systems::OdometryPublisher">
