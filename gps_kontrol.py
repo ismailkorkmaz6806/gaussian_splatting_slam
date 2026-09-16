@@ -6,7 +6,7 @@ mav = mavutil.mavlink_connection('udp:127.0.0.1:14580')
 mav.wait_heartbeat(timeout=5)
 
 print("🔍 EKF2_GPS_CTRL parametresi okunuyor...")
-mav.param_request_read(1, 1, b'EKF2_GPS_CTRL', -1)
+mav.mav.param_request_read_send(1, 1, b'EKF2_GPS_CTRL', -1)
 msg = mav.recv_match(type='PARAM_VALUE', blocking=True, timeout=5)
 
 if msg:

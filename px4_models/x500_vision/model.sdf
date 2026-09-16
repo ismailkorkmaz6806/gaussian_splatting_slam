@@ -126,7 +126,7 @@
     
     <!-- 📡 Dron Tepe 360 Derece 3D Lidar Sensörü -->
     <link name="forward_lidar_link">
-      <pose relative_to="base_link">0 0 0.25 0 0 0</pose>
+      <pose relative_to="base_link">0 0 0.075 0 0 0</pose>
       <inertial>
         <mass>0.1</mass>
         <inertia>
@@ -137,14 +137,23 @@
       </inertial>
       <visual name="top_lidar_visual">
         <geometry>
-          <cylinder><radius>0.03</radius><length>0.04</length></cylinder>
+          <cylinder><radius>0.035</radius><length>0.035</length></cylinder>
+        </geometry>
+        <material>
+          <ambient>0.15 0.15 0.15 1</ambient>
+          <diffuse>0.25 0.25 0.25 1</diffuse>
+        </material>
+      </visual>
+      <visual name="lidar_mount_stand">
+        <pose>0 0 -0.025 0 0 0</pose>
+        <geometry>
+          <cylinder><radius>0.008</radius><length>0.03</length></cylinder>
         </geometry>
         <material>
           <ambient>0.1 0.1 0.1 1</ambient>
-          <diffuse>0.2 0.2 0.2 1</diffuse>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
         </material>
       </visual>
-      
     </link>
     <joint name="forward_lidar_joint" type="fixed">
       <parent>base_link</parent>

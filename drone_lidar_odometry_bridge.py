@@ -156,12 +156,15 @@ class FastLidarICP:
         Hedef fonksiyon: min || R * src + t - tgt ||^2
         """
         if src_pts is None or tgt_pts is None:
-            return np.eye(3), np.zeros(3), False
+            return np.eye(3), np.zeros(3), False, 0
 
         R = torch.eye(3, device=self.device) if init_R is None else torch.as_tensor(init_R, dtype=torch.float32, device=self.device)
         t = torch.zeros(3, device=self.device) if init_t is None else torch.as_tensor(init_t, dtype=torch.float32, device=self.device)
 
         converged = False
+        num_matched = 0
+        t_step = torch.zeros(3, device=self.device)
+
         for _ in range(self.max_iters):
             curr_src = src_pts @ R.T + t
             # İki nokta bulutu arasındaki en yakın komşuları vektörel cdist ile bul
@@ -169,7 +172,9 @@ class FastLidarICP:
             min_dists, min_indices = torch.min(dists, dim=1)
 
             valid_mask = min_dists < self.max_dist
-            if valid_mask.sum() < 30:
+            num_matched = int(valid_mask.sum().item())
+            if num_matched < 20:
+                converged = False
                 break
 
             p_src = curr_src[valid_mask]
@@ -197,11 +202,14 @@ class FastLidarICP:
             R = R_step @ R
             t = t @ R_step.T + t_step
 
-            if torch.norm(t_step) < 1e-4:
+            if torch.norm(t_step) < 1e-3:
                 converged = True
                 break
 
-        return R.cpu().numpy(), t.cpu().numpy(), converged
+        if num_matched >= 20 and torch.norm(t_step) < 5e-3:
+            converged = True
+
+        return R.cpu().numpy(), t.cpu().numpy(), converged, num_matched
 
 
 # =====================================================================================
@@ -228,14 +236,14 @@ class LidarOdometryPX4Bridge:
         self.sim_pos_ned = [0.0, 0.0, 0.0]
         self.sim_quat_ned = [1.0, 0.0, 0.0, 0.0]
 
-        # Lidar Odometri Takipçisi Durumu
-        self.icp = FastLidarICP(device='cpu', max_iters=8, max_dist=0.6, max_points=600)
-        self.ref_keyframe_pts = None
+        # Lidar Odometri Takipçisi Durumu (Submap SLAM)
+        self.icp = FastLidarICP(device='cpu', max_iters=12, max_dist=0.5, max_points=600)
+        self.submap_pts = None
+        self.last_submap_pos = np.zeros(3, dtype=np.float64)
         self.prev_scan_pts = None
         self.last_lidar_time = None
-        self.world_R = np.eye(3, dtype=np.float64)  # Dünya çerçevesindeki kümülatif rotasyon
+        self.world_R = np.eye(3, dtype=np.float64)   # Dünya çerçevesindeki kümülatif rotasyon
         self.world_t = np.zeros(3, dtype=np.float64) # Dünya çerçevesindeki kümülatif konum
-        self.keyframe_dist_acc = 0.0
         self.lidar_frame_count = 0
         self.odom_count = 0
         self.is_airborne = False
@@ -300,9 +308,9 @@ class LidarOdometryPX4Bridge:
             ("EKF2_HGT_REF", 3, True),       # Vision İrtifa Referansı
             ("EKF2_MAG_TYPE", 5, True),      # Vizyon/Lidar Yaw Referansı
             ("EKF2_MAG_CHECK", 0, True),
-            ("NAV_RCL_ACT", 7, True),        # Kumanda koptuğu an doğrudan HOLD moduna kilitlen!
-            ("COM_RCL_EX_T", 0.5, False),
-            ("COM_RCL_EXCEPT", 7, True),     # Hold ve Takeoff modlarında kumanda zorunluluğunu kaldır
+            ("NAV_RCL_ACT", 0, True),        # Kumanda kopsa bile failsafe/iniş yapma! Pozisyonu kilitle, çivi gibi kal!
+            ("COM_RC_LOSS_T", 0.3, False),   # Kumanda USB'den çekildiğinde hemen tepki ver
+            ("COM_RCL_EXCEPT", 31, True),    # Tüm modlarda kumanda zorunluluğunu kaldır
             ("NAV_DLL_ACT", 0, True),
             ("COM_RC_IN_MODE", 1, True),
             ("COM_ARM_WO_GPS", 1, True),     # GPS olmadan Arm izni
@@ -314,7 +322,8 @@ class LidarOdometryPX4Bridge:
             ("CBRK_USB_CHK", 197848, True),
             ("CBRK_SUPPLY_CHK", 894281, True),
             ("COM_ARM_MIS_REQ", 0, True),
-            ("COM_ARM_CHK_ESCS", 0, True)
+            ("COM_ARM_CHK_ESCS", 0, True),
+            ("COM_POSCTL_NAVL", 1, True)
         ]
         for name, val, is_int in params:
             self.set_param(name, val, is_int)
@@ -347,50 +356,55 @@ class LidarOdometryPX4Bridge:
             pass
 
     def process_xyz(self, xyz):
-        """Her iki lidar formatından (PointCloud ve LaserScan) gelen 3B noktaları ICP ile işler."""
+        """Her iki lidar formatından (PointCloud ve LaserScan) gelen 3B noktaları Submap SLAM ile işler."""
         t_now = time.time()
         try:
             pts_tensor = self.icp.preprocess(xyz)
             if pts_tensor is None:
                 return
 
-            if self.ref_keyframe_pts is None:
-                self.ref_keyframe_pts = pts_tensor
-                self.prev_scan_pts = pts_tensor
-                self.last_lidar_time = t_now
-                # Başlangıç koordinatlarını mevcut yerel pozisyona senkronize et
-                with self.lock:
-                    self.world_t = np.array([self.current_pos_ned[0], -self.current_pos_ned[1], -self.current_pos_ned[2]], dtype=np.float64)
-                print(f"🎯 [LIDAR ODOMETRİ] İlk Referans Kare Alındı: {len(pts_tensor)} nokta. Takip Başladı!")
-                return
-
-            # Dron henüz havalanmadıysa (yerde duruyorsa), zemin kaymasını ve inovasyon patlamasını sıfırla
-            if not self.is_airborne:
+            if self.submap_pts is None:
                 self.world_t = np.zeros(3, dtype=np.float64)
                 self.world_R = np.eye(3, dtype=np.float64)
+                self.submap_pts = pts_tensor.clone()
+                self.last_submap_pos = np.zeros(3, dtype=np.float64)
                 self.prev_scan_pts = pts_tensor
-                with self.lock:
-                    if self.mode == 'lidar':
-                        self.current_pos_ned = [0.0, 0.0, 0.0]
-                        self.current_vel_frd = [0.0, 0.0, 0.0]
-                        self.current_ang_vel_frd = [0.0, 0.0, 0.0]
-                return
+                print(f"🗺️ [SUBMAP SLAM] İlk Harita Başlatıldı ({len(self.submap_pts)} nokta). EKF2 Konum Kilidi Aktif!")
 
             dt = t_now - self.last_lidar_time if self.last_lidar_time else 0.1
-            if dt <= 0:
+            if dt <= 0 or dt > 0.5:
                 dt = 0.05
             self.last_lidar_time = t_now
 
-            R_delta, t_delta, converged = self.icp.align(pts_tensor, self.prev_scan_pts)
+            # 1. Anlık taramayı tahmin edilen dünya (world) koordinatlarına yansıt
+            R_curr = torch.as_tensor(self.world_R.T, dtype=torch.float32, device=self.icp.device)
+            t_curr = torch.as_tensor(self.world_t, dtype=torch.float32, device=self.icp.device)
+            pts_world_pred = pts_tensor @ R_curr + t_curr
 
-            delta_dist = np.linalg.norm(t_delta)
-            if delta_dist > 1.5:  # Fiziksel sıçramaları filtrele
-                t_delta = np.zeros(3)
-                R_delta = np.eye(3)
+            # 2. Scan-to-Submap Eşleştirme (Dünya alt-haritasına karşı doğrudan kilitlenme)
+            R_corr, t_corr, converged, num_matched = self.icp.align(pts_world_pred, self.submap_pts)
+            corr_norm = float(np.linalg.norm(t_corr))
 
-            # Kümülatif konumu güncelle
-            self.world_t += self.world_R @ t_delta
-            self.world_R = R_delta @ self.world_R
+            # 3. İnovasyon Filtresi: Eşleşme başarılıysa ve sıçrama yoksa konumu güncelle
+            if converged and corr_norm < 0.5:
+                self.world_t = R_corr @ self.world_t + t_corr
+                self.world_R = R_corr @ self.world_R
+
+                # 4. Alt Harita (Submap) Genişletme: Dron hareket ettikçe yeni noktaları hafızaya ekle
+                dist_since_submap = float(np.linalg.norm(self.world_t - self.last_submap_pos))
+                if dist_since_submap > 0.15 or len(self.submap_pts) < 400:
+                    self.last_submap_pos = self.world_t.copy()
+                    R_c = torch.as_tensor(self.world_R.T, dtype=torch.float32, device=self.icp.device)
+                    t_c = torch.as_tensor(self.world_t, dtype=torch.float32, device=self.icp.device)
+                    pts_registered = pts_tensor @ R_c + t_c
+
+                    self.submap_pts = torch.cat([self.submap_pts, pts_registered], dim=0)
+
+                    # Harita boyutunu CPU için optimize tut (~1000 nokta)
+                    if len(self.submap_pts) > 1200:
+                        dists_to_drone = torch.sum((self.submap_pts - t_c)**2, dim=1)
+                        closest_idx = torch.topk(dists_to_drone, k=1000, largest=False).indices
+                        self.submap_pts = self.submap_pts[closest_idx]
 
             x_ned = float(self.world_t[0])
             y_ned = -float(self.world_t[1])
@@ -413,14 +427,10 @@ class LidarOdometryPX4Bridge:
                     self.current_ang_vel_frd = [0.0, 0.0, 0.0]
 
             self.prev_scan_pts = pts_tensor
-            self.keyframe_dist_acc += delta_dist
-            if self.keyframe_dist_acc > 0.3:
-                self.ref_keyframe_pts = pts_tensor
-                self.keyframe_dist_acc = 0.0
-
             self.lidar_frame_count += 1
             if self.lidar_frame_count % 30 == 0:
-                print(f"📡 [LIDAR ODOMETRİ AKTİF] X: {x_ned:+.2f}m | Y: {y_ned:+.2f}m | Z: {z_ned:+.2f}m | Hız: ({vx:.2f}, {vy:.2f}, {vz:.2f}) m/s")
+                submap_len = len(self.submap_pts) if self.submap_pts is not None else 0
+                print(f"📡 [SUBMAP SLAM] X: {x_ned:+.2f}m | Y: {y_ned:+.2f}m | Z: {z_ned:+.2f}m | Harita: {submap_len} nokta | Hız: ({vx:.2f}, {vy:.2f}, {vz:.2f}) m/s")
         except Exception:
             pass
 
@@ -635,7 +645,7 @@ class LidarOdometryPX4Bridge:
         print("📍 Konum Kaynağı       : 3B Katı Hal Lidar Nokta Bulutu Eşleştirme (ICP)")
         print("📍 Koordinat Çerçevesi : NED (X=Kuzey, Y=Doğu, Z=-İrtifa)")
         print("📍 Kovaryans Değeri    : 1e-4 (Geçerli Pozitif Matris)")
-        print("💡 Failsafe Önleme     : NAV_RCL_ACT = 7 (Hold Modunda Asılı Kalma)")
+        print("💡 Failsafe Önleme     : NAV_RCL_ACT = 0 (RC Kopmasında İnişi Yasakla & Havada Kilitlen)")
         print("------------------------------------------------------------------\n")
 
         try:

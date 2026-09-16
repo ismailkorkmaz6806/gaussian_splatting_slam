@@ -176,11 +176,10 @@ while true; do
     echo "  [2] 🟢 GPS'i AÇ   (failure gps ok)"
     echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
     echo "  [4] 🚀 Dronu ARM ET (Motorları Başlat)"
-    echo "  [5] 🛫 GPS'siz Havalan (1.5m Takeoff & Çivi Gibi Kal)"
-    echo "  [6] 🛑 Dronu DISARM ET (Motorları Durdur / İndir)"
+    echo "  [5] 🛑 Dronu DISARM ET (Motorları Durdur / İndir)"
     echo "  [0] ❌ Simülasyonu Kapat ve Çık"
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    read -p "Seçiminiz [0-6]: " CMD_SECIM
+    read -p "Seçiminiz [0-5]: " CMD_SECIM
 
     case $CMD_SECIM in
         1)
@@ -202,10 +201,6 @@ while true; do
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.arm(force=True)" 2>/dev/null || true
             ;;
         5)
-            echo -e "${GREEN}🛫 GPS'siz 1.5 Metreye Otonom Kalkış Yapılıyor...${NC}"
-            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.takeoff(1.5)" 2>/dev/null || true
-            ;;
-        6)
             echo -e "${YELLOW}🛑 Dron DISARM Ediliyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.disarm()" 2>/dev/null || true
             ;;

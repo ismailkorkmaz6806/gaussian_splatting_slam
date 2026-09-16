@@ -189,10 +189,9 @@ class CPUHoverEngine:
             ("EKF2_MAG_CHECK", 0, True),
 
             # 3. Kumanda ve Failsafe Yapılandırması
-            # NAV_RCL_ACT = 7 (Kumanda çekildiği an temiz bir şekilde doğrudan HOLD moduna kilitlen!)
-            ("NAV_RCL_ACT", 7, True),
-            ("COM_RCL_EX_T", 0.5, False), # Kumanda koptuktan 0.5 sn sonra Hold'a kilitlen
-            ("COM_RCL_EXCEPT", 7, True),  # Hold ve Takeoff modlarında kumanda zorunluluğunu tamamen kaldır
+            ("NAV_RCL_ACT", 0, True),
+            ("COM_RC_LOSS_T", 0.3, False),
+            ("COM_RCL_EXCEPT", 31, True),
             ("NAV_DLL_ACT", 0, True),
             # COM_RC_IN_MODE = 1 (Fiziksel kumanda zorunluluğunu kaldır, Joystick/QGC serbest)
             ("COM_RC_IN_MODE", 1, True),
