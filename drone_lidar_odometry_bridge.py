@@ -103,22 +103,23 @@ def quat_to_euler(q):
 
 
 # EKF2 için Geçerli Pozitif Kovaryans Matrisi (Üst Üçgen 21 Eleman)
+# Gerçekçi Lidar gürültüsü: Var=0.005 (Std ~7 cm) -> İnovasyon patlamalarını ve dengesizlik uyarısını önler
 COV_POSE_21 = [
-    1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,   # Satır 0: X
-          1e-4, 0.0,  0.0,  0.0,  0.0,   # Satır 1: Y
-                1e-4, 0.0,  0.0,  0.0,   # Satır 2: Z
-                      1e-4, 0.0,  0.0,   # Satır 3: Roll
-                            1e-4, 0.0,   # Satır 4: Pitch
-                                  1e-4    # Satır 5: Yaw
+    0.005, 0.0,   0.0,   0.0,   0.0,   0.0,   # Satır 0: X
+           0.005, 0.0,   0.0,   0.0,   0.0,   # Satır 1: Y
+                  0.005, 0.0,   0.0,   0.0,   # Satır 2: Z
+                         0.001, 0.0,   0.0,   # Satır 3: Roll
+                                0.001, 0.0,   # Satır 4: Pitch
+                                       0.001   # Satır 5: Yaw
 ]
 
 COV_VEL_21 = [
-    1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,
-          1e-4, 0.0,  0.0,  0.0,  0.0,
-                1e-4, 0.0,  0.0,  0.0,
-                      1e-4, 0.0,  0.0,
-                            1e-4, 0.0,
-                                  1e-4
+    0.005, 0.0,   0.0,   0.0,   0.0,   0.0,
+           0.005, 0.0,   0.0,   0.0,   0.0,
+                  0.005, 0.0,   0.0,   0.0,
+                         0.001, 0.0,   0.0,
+                                0.001, 0.0,
+                                       0.001
 ]
 
 
@@ -237,6 +238,7 @@ class LidarOdometryPX4Bridge:
         self.keyframe_dist_acc = 0.0
         self.lidar_frame_count = 0
         self.odom_count = 0
+        self.is_airborne = False
 
     def connect_px4(self):
         """PX4 SITL MAVLink portuna (14580) bağlanır."""
@@ -362,6 +364,18 @@ class LidarOdometryPX4Bridge:
                 print(f"🎯 [LIDAR ODOMETRİ] İlk Referans Kare Alındı: {len(pts_tensor)} nokta. Takip Başladı!")
                 return
 
+            # Dron henüz havalanmadıysa (yerde duruyorsa), zemin kaymasını ve inovasyon patlamasını sıfırla
+            if not self.is_airborne:
+                self.world_t = np.zeros(3, dtype=np.float64)
+                self.world_R = np.eye(3, dtype=np.float64)
+                self.prev_scan_pts = pts_tensor
+                with self.lock:
+                    if self.mode == 'lidar':
+                        self.current_pos_ned = [0.0, 0.0, 0.0]
+                        self.current_vel_frd = [0.0, 0.0, 0.0]
+                        self.current_ang_vel_frd = [0.0, 0.0, 0.0]
+                return
+
             dt = t_now - self.last_lidar_time if self.last_lidar_time else 0.1
             if dt <= 0:
                 dt = 0.05
@@ -477,6 +491,9 @@ class LidarOdometryPX4Bridge:
 
             self.sim_pos_ned = [rel_x, rel_y, rel_z]
             self.sim_quat_ned = [q_FRD_to_NED[0], q_FRD_to_NED[1], q_FRD_to_NED[2], q_FRD_to_NED[3]]
+
+            # Kalkış tespiti (Yerden 8 cm yükseldiğinde havada kabul et)
+            self.is_airborne = abs(rel_z) > 0.08
 
             if self.mode == 'sim' or self.ref_keyframe_pts is None:
                 with self.lock:
