@@ -18,6 +18,7 @@
 """
 
 import os
+os.environ['MAVLINK20'] = '1'
 import sys
 import time
 import math
@@ -580,8 +581,9 @@ class LidarOdometryPX4Bridge:
                         COV_POSE_21,
                         self.odom_count % 256
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    if tick % 70 == 0:
+                        print(f"⚠️ [MAVLINK ODOM HATA]: {e}")
 
                 if tick < 100 or (tick % 35 == 0):
                     self.send_global_origin()
