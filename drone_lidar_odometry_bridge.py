@@ -428,9 +428,13 @@ class LidarOdometryPX4Bridge:
 
             self.prev_scan_pts = pts_tensor
             self.lidar_frame_count += 1
-            if self.lidar_frame_count % 30 == 0:
+            if self.lidar_frame_count % 15 == 0:
                 submap_len = len(self.submap_pts) if self.submap_pts is not None else 0
-                print(f"📡 [SUBMAP SLAM] X: {x_ned:+.2f}m | Y: {y_ned:+.2f}m | Z: {z_ned:+.2f}m | Harita: {submap_len} nokta | Hız: ({vx:.2f}, {vy:.2f}, {vz:.2f}) m/s")
+                dx = x_ned - self.sim_pos_ned[0]
+                dy = y_ned - self.sim_pos_ned[1]
+                dz = z_ned - self.sim_pos_ned[2]
+                err_cm = math.sqrt(dx*dx + dy*dy + dz*dz) * 100.0
+                print(f"📊 [SLAM vs GT] SLAM: ({x_ned:+5.2f}, {y_ned:+5.2f}, {-z_ned:4.2f}m) | GERÇEK: ({self.sim_pos_ned[0]:+5.2f}, {self.sim_pos_ned[1]:+5.2f}, {-self.sim_pos_ned[2]:4.2f}m) | HATA: {err_cm:4.1f} cm (Harita: {submap_len} nokta)")
         except Exception:
             pass
 
@@ -505,7 +509,7 @@ class LidarOdometryPX4Bridge:
             # Kalkış tespiti (Yerden 8 cm yükseldiğinde havada kabul et)
             self.is_airborne = abs(rel_z) > 0.08
 
-            if self.mode == 'sim' or self.ref_keyframe_pts is None:
+            if self.mode == 'sim':
                 with self.lock:
                     self.current_pos_ned = [rel_x, rel_y, rel_z]
                     self.current_euler_ned = [roll, pitch, yaw]
