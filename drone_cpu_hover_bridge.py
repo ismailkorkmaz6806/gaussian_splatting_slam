@@ -201,12 +201,12 @@ class CPUHoverEngine:
             ("EKF2_MAG_CHECK", 0, True),
 
             # 3. Kumanda ve Failsafe Yapılandırması
-            # NAV_RCL_ACT = 0 (Kumanda koptuğunda kilitlenme / acil iniş yapma, Hold modunu koru)
-            ("NAV_RCL_ACT", 0, True),
+            # NAV_RCL_ACT = 1 (Kumanda koptuğunda / fişten çekildiğinde otomatik HOLD moduna geç ve asılı kal!)
+            ("NAV_RCL_ACT", 1, True),
             ("NAV_DLL_ACT", 0, True),
             # COM_RC_IN_MODE = 1 (Fiziksel kumanda zorunluluğunu kaldır, Joystick/QGC serbest)
             ("COM_RC_IN_MODE", 1, True),
-            ("COM_RCL_EX_T", 10, False),
+            ("COM_RCL_EX_T", 0.5, False), # Kumanda koptuktan 0.5 sn sonra Hold'a kilitlen
 
             # 4. Kalkış ve Arm İzinleri (Preflight Check Baypasları)
             ("COM_ARM_WO_GPS", 1, True),      # GPS olmadan Arm izni
