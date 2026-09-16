@@ -108,39 +108,26 @@ class CPUHoverEngine:
         self.time_offset_ns = 0
 
     def connect_px4(self):
-        # PX4 SITL Onboard MAVLink standardı:
-        # PX4 kendi yerel 14580 portunda dinlerken, dış dünyaya (companion/ROS/offboard) UDP 14540 portundan yayın yapar.
-        urls_to_try = [
-            "udpin:0.0.0.0:14540",
-            "udpout:127.0.0.1:14580",
-            f"udpin:0.0.0.0:{self.mavlink_port}",
-            f"udpout:127.0.0.1:{self.mavlink_port}",
-            f"udp:127.0.0.1:{self.mavlink_port}",
-        ]
-        print(f"📡 [CPU HOVER] PX4 Otopilotuna bağlanılıyor (port 14540 / 14580 taranıyor)...")
-        for attempt in range(25):
-            for url in urls_to_try:
-                try:
-                    conn = mavutil.mavlink_connection(url, source_system=255, source_component=197)
-                    if "udpout" in url:
-                        # PX4'e varlığımızı bildirmek için heartbeat fırlat
-                        conn.mav.heartbeat_send(
-                            mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
-                            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                            0, 0, 0
-                        )
-                    hb = conn.wait_heartbeat(timeout=0.6)
-                    if hb:
-                        self.mav = conn
-                        print(f"✅ [CPU HOVER] PX4 MAVLink Bağlantısı Kuruldu ({url}, System ID: {self.mav.target_system})!")
-                        self.configure_px4_parameters()
-                        return True
-                    conn.close()
-                except Exception:
-                    pass
-            print(f"⏳ Otopilot bekleniyor... ({attempt+1}/25)")
-            time.sleep(1)
-        return False
+        """PX4 SITL MAVLink portuna (14580) doğrudan ve gecikmesiz bağlanır."""
+        url = f"udpout:127.0.0.1:{self.mavlink_port}"
+        print(f"📡 [CPU HOVER] PX4 Otopilotuna bağlanılıyor: {url}...")
+        try:
+            self.mav = mavutil.mavlink_connection(url, source_system=255, source_component=197)
+            self.mav.target_system = 1
+            self.mav.target_component = 1
+            # Otopilota kendimizi tanıtmak için anında heartbeat gönder
+            self.mav.mav.heartbeat_send(
+                mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                0, 0, 0
+            )
+            print(f"✅ [CPU HOVER] PX4 MAVLink Bağlantısı Kuruldu ({url})!")
+            self.configure_px4_parameters()
+            self.send_global_origin()
+            return True
+        except Exception as e:
+            print(f"❌ MAVLink bağlantı hatası: {e}")
+            return False
 
     def send_nsh(self, cmd):
         """NSH terminali üzerinden otopilota sıfır gecikmeli parametre/komut gönderir."""
@@ -378,27 +365,18 @@ class CPUHoverEngine:
                 time.sleep(dt - elapsed)
 
     def heartbeat_monitor_worker(self):
-        """PX4 yeniden başladığında veya bağlantı koptuğunda parametreleri otomatik tazeler."""
-        last_hb = time.time()
+        """Otopilot ile bağlantıyı ve zaman senkronizasyonunu sürekli canlı tutar."""
         while self.is_running:
             try:
-                # Otopilottan gelen kalp atışlarını takip et
-                msg = self.mav.recv_match(type=['HEARTBEAT'], blocking=False)
-                now = time.time()
-                if msg:
-                    # Uzun süreli sessizlikten sonra yeni heartbeat geldiyse (PX4 yeniden başlatılmışsa)
-                    if (now - last_hb) > 4.0:
-                        print("\n🔄 [CPU HOVER] PX4 Yeniden Başlatıldı! Parametreler ve Origin Tekrar Enjekte Ediliyor...")
-                        self.configure_px4_parameters()
-                        self.send_global_origin()
-                    last_hb = now
-                elif (now - last_hb) > 5.0:
-                    # 5 saniyedir heartbeat yok, yeniden bağlanmayı dene
-                    self.connect_px4()
-                    last_hb = time.time()
+                if self.mav:
+                    self.mav.mav.heartbeat_send(
+                        mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                        mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                        0, 0, 0
+                    )
             except Exception:
                 pass
-            time.sleep(0.5)
+            time.sleep(1.0)
 
     def start(self):
         if not self.connect_px4():
