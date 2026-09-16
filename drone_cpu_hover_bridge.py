@@ -136,51 +136,80 @@ class CPUHoverEngine:
                 list(chunk) + [0]*(70 - len(chunk))
             )
 
+    def set_param(self, name, value, is_int=True):
+        """MAVLink PARAM_SET ve NSH üzerinden parametreyi çifte garantiyle ayarlar."""
+        if not self.mav:
+            return
+        # 1. NSH Terminal Komutu
+        self.send_nsh(f"param set {name} {value}")
+        # 2. MAVLink PARAM_SET Protokolü (Msg #23)
+        try:
+            ptype = mavutil.mavlink.MAV_PARAM_TYPE_INT32 if is_int else mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+            target_sys = getattr(self.mav, 'target_system', 1) or 1
+            target_comp = getattr(self.mav, 'target_component', 1) or 1
+            self.mav.mav.param_set_send(
+                target_sys,
+                target_comp,
+                name.encode('ascii')[:16],
+                float(value),
+                ptype
+            )
+        except Exception:
+            pass
+
     def configure_px4_parameters(self):
         """
         AŞAMA 1: PX4 EKF2 ve Güvenlik Parametrelerini GPS-Denied Uçuşa Kilitler.
+        MAVLink PARAM_SET ve NSH Shell üzerinden anında uygular.
         """
         print("⚙️  [AŞAMA 1] PX4 Parametreleri GPS-Denied Hold & VIO Moduna Yapılandırılıyor...")
         
-        # 1. GPS ve Uydu Füzyonunu Kapat
-        self.send_nsh("param set SYS_FAILURE_EN 1")
+        params = [
+            # 1. GPS ve Uydu Füzyonunu Kapat
+            ("SIM_GZ_EN_GPS", 0, True),
+            ("SYS_FAILURE_EN", 1, True),
+            ("EKF2_GPS_CTRL", 0, True),
+            ("EKF2_GPS_CHECK", 0, True),
+
+            # 2. Harici Görsel Odometri (EV) Füzyonu
+            # EKF2_EV_CTRL = 11 (Bitmask: 1=Horiz Pos, 2=Vert Pos, 8=Yaw -> 11)
+            ("EKF2_EV_CTRL", 11, True),
+            # EKF2_HGT_REF = 3 (0=Baro, 1=GNSS, 2=Range, 3=Vision İrtifa Referansı)
+            ("EKF2_HGT_REF", 3, True),
+            # EKF2_MAG_TYPE = 4 (Pusula manyetik parazitlerini kapat, Yaw'ı vizyondan al)
+            ("EKF2_MAG_TYPE", 4, True),
+            ("EKF2_MAG_CHECK", 0, True),
+
+            # 3. Kumanda ve Failsafe Yapılandırması
+            # NAV_RCL_ACT = 0 (Kumanda koptuğunda kilitlenme / acil iniş yapma, Hold modunu koru)
+            ("NAV_RCL_ACT", 0, True),
+            ("NAV_DLL_ACT", 0, True),
+            # COM_RC_IN_MODE = 1 (Fiziksel kumanda zorunluluğunu kaldır, Joystick/QGC serbest)
+            ("COM_RC_IN_MODE", 1, True),
+            ("COM_RCL_EX_T", 10, False),
+
+            # 4. Kalkış ve Arm İzinleri (Preflight Check Baypasları)
+            ("COM_ARM_WO_GPS", 1, True),      # GPS olmadan Arm izni
+            ("COM_ARM_MAG_STR", 0, True),     # Manyetik sapma kontrolü bypass
+            ("COM_ARM_MAG_ANG", -1, True),    # Eğim açısı kontrolü bypass
+            ("MIS_TAKEOFF_ALT", 1.5, False),  # Otonom kalkış irtifası 1.5 metre
+            ("CBRK_IO_SAFETY", 22027, True),  # Emniyet butonu kontrolünü atla
+            ("CBRK_USB_CHK", 197848, True),   # USB takılı güvenlik uyarısını atla
+            ("CBRK_SUPPLY_CHK", 894281, True),# Güç kaynağı / pil kontrolünü atla
+            ("COM_ARM_MIS_REQ", 0, True),
+            ("COM_ARM_CHK_ESCS", 0, True)
+        ]
+
+        for name, val, is_int in params:
+            self.set_param(name, val, is_int)
+            time.sleep(0.02)
+
         self.send_nsh("failure gps off")
-        self.send_nsh("param set SIM_GZ_EN_GPS 0")
-        self.send_nsh("param set EKF2_GPS_CTRL 0")
-        self.send_nsh("param set EKF2_GPS_CHECK 0")
-
-        # 2. Harici Görsel Odometri (EV) Füzyonu
-        # EKF2_EV_CTRL = 11 (Bitmask: 1=Horiz Pos, 2=Vert Pos, 8=Yaw -> 11)
-        self.send_nsh("param set EKF2_EV_CTRL 11")
-        # EKF2_HGT_REF = 3 (0=Baro, 1=GNSS, 2=Range, 3=Vision İrtifa Referansı)
-        self.send_nsh("param set EKF2_HGT_REF 3")
-        # EKF2_MAG_TYPE = 4 (Pusula manyetik parazitlerini kapat, Yaw'ı vizyondan al)
-        self.send_nsh("param set EKF2_MAG_TYPE 4")
-        self.send_nsh("param set EKF2_MAG_CHECK 0")
-
-        # 3. Kumanda ve Failsafe Yapılandırması
-        # NAV_RCL_ACT = 0 (Kumanda koptuğunda kilitlenme / acil iniş yapma, Hold modunu koru)
-        self.send_nsh("param set NAV_RCL_ACT 0")
-        self.send_nsh("param set NAV_DLL_ACT 0")
-        # COM_RC_IN_MODE = 1 (Fiziksel kumanda zorunluluğunu kaldır, Joystick/QGC serbest)
-        self.send_nsh("param set COM_RC_IN_MODE 1")
-        self.send_nsh("param set COM_RCL_EX_T 10")
-
-        # 4. Kalkış ve Arm İzinleri
-        self.send_nsh("param set COM_ARM_WO_GPS 1")   # GPS olmadan Arm izni
-        self.send_nsh("param set COM_ARM_MAG_STR 0")  # Pusula sapma kontrolünü yoksay
-        self.send_nsh("param set COM_ARM_MAG_ANG -1") # Eğim açısı kontrolünü yoksay
-        self.send_nsh("param set MIS_TAKEOFF_ALT 1.5") # Otonom kalkış yüksekliği: 1.5 metre
-        self.send_nsh("param set CBRK_IO_SAFETY 22027") # Emniyet butonu kontrolünü atla
-        self.send_nsh("param set CBRK_USB_CHK 197848")  # USB takılı uçuş uyarısını atla
-        self.send_nsh("param set CBRK_SUPPLY_CHK 894281") # Güç kaynağı kontrolünü atla
-        self.send_nsh("param set COM_ARM_MIS_REQ 0")
-        self.send_nsh("param set COM_ARM_CHK_ESCS 0")
-
+        self.send_nsh("param save")
         print("✅ [AŞAMA 1] PX4 Parametre Yapılandırması Tamamlandı!")
 
     def send_global_origin(self):
-        """EKF2'nin yerel harita koordinatlarını sabitlemesi için Global Origin tanımlar."""
+        """EKF2'nin yerel harita koordinatlarını sabitlemesi için Global Origin ve Home tanımlar."""
         if not self.mav:
             return
         try:
@@ -307,8 +336,8 @@ class CPUHoverEngine:
                 except Exception:
                     pass
 
-                # İlk 5 döngüde Global Origin ve Home Position'ı PX4'e bildir
-                if tick < 5:
+                # İlk 100 döngüde ve sonrasında her 1 saniyede bir (35 tick) Global Origin ve Home Position'ı PX4'e bildir
+                if tick < 100 or (tick % 35 == 0):
                     self.send_global_origin()
                 tick += 1
 
