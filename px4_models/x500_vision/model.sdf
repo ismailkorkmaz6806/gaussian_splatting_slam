@@ -154,6 +154,40 @@
           <diffuse>0.1 0.1 0.1 1</diffuse>
         </material>
       </visual>
+      <sensor name='forward_lidar' type='gpu_lidar'>
+        <gz_frame_id>forward_lidar_link</gz_frame_id>
+        <pose>0 0 0.02 0 0 0</pose>
+        <update_rate>15</update_rate>
+        <topic>/forward_lidar/points</topic>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>180</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265</min_angle>
+              <max_angle>3.14159265</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>16</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.2618</min_angle>
+              <max_angle>0.2618</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.15</min>
+            <max>25.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.02</stddev>
+          </noise>
+        </ray>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+      </sensor>
     </link>
     <joint name="forward_lidar_joint" type="fixed">
       <parent>base_link</parent>
