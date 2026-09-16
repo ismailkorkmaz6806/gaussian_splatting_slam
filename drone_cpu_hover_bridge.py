@@ -319,7 +319,7 @@ class CPUHoverEngine:
 
         while self.is_running:
             start_t = time.time()
-            if self.mav and self.odom_count > 0:
+            if self.mav:
                 with self.lock:
                     x, y, z = self.current_pos_ned
                     roll, pitch, yaw = self.current_euler_ned
