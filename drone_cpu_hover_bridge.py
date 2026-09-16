@@ -192,8 +192,8 @@ class CPUHoverEngine:
             ("EKF2_GPS_CHECK", 0, True),
 
             # 2. Harici Görsel Odometri (EV) Füzyonu
-            # EKF2_EV_CTRL = 11 (Bitmask: 1=Horiz Pos, 2=Vert Pos, 8=Yaw -> 11)
-            ("EKF2_EV_CTRL", 11, True),
+            # EKF2_EV_CTRL = 15 (Bitmask: 1=Horiz Pos, 2=Vert Pos, 4=3D Vel, 8=Yaw -> 15 Tam Aktif Frenleme)
+            ("EKF2_EV_CTRL", 15, True),
             # EKF2_HGT_REF = 3 (0=Baro, 1=GNSS, 2=Range, 3=Vision İrtifa Referansı)
             ("EKF2_HGT_REF", 3, True),
             # EKF2_MAG_TYPE = 5 (0:Auto, 1:Heading, 5:None/Vizyon Yaw, 6:Init)
