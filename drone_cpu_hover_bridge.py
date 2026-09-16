@@ -196,8 +196,8 @@ class CPUHoverEngine:
             ("EKF2_EV_CTRL", 11, True),
             # EKF2_HGT_REF = 3 (0=Baro, 1=GNSS, 2=Range, 3=Vision İrtifa Referansı)
             ("EKF2_HGT_REF", 3, True),
-            # EKF2_MAG_TYPE = 4 (Pusula manyetik parazitlerini kapat, Yaw'ı vizyondan al)
-            ("EKF2_MAG_TYPE", 4, True),
+            # EKF2_MAG_TYPE = 5 (0:Auto, 1:Heading, 5:None/Vizyon Yaw, 6:Init)
+            ("EKF2_MAG_TYPE", 5, True),
             ("EKF2_MAG_CHECK", 0, True),
 
             # 3. Kumanda ve Failsafe Yapılandırması
@@ -237,13 +237,25 @@ class CPUHoverEngine:
             lon = int(8.5461637 * 1e7)
             alt = int(488.0 * 1000)
             usec = int(time.time() * 1e6)
-            self.mav.mav.set_gps_global_origin_send(1, lat, lon, alt, usec)
+            tsys = getattr(self.mav, 'target_system', 1) or 1
+            self.mav.mav.set_gps_global_origin_send(tsys, lat, lon, alt, usec)
             self.mav.mav.set_home_position_send(
-                1, lat, lon, alt,
+                tsys, lat, lon, alt,
                 0.0, 0.0, 0.0,
                 [1.0, 0.0, 0.0, 0.0],
                 0.0, 0.0, 0.0,
                 usec
+            )
+            # MAV_CMD_DO_SET_GLOBAL_ORIGIN (Komut #195)
+            self.mav.mav.command_long_send(
+                tsys,
+                0,
+                195,
+                0,
+                0, 0, 0, 0,
+                47.3979710,
+                8.5461637,
+                488.0
             )
         except Exception:
             pass
