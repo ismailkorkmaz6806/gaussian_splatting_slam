@@ -48,6 +48,7 @@ cleanup() {
     pkill -9 px4 2>/dev/null || true
     pkill -9 -f "gz sim" 2>/dev/null || true
     pkill -9 ruby 2>/dev/null || true
+    pkill -9 -f "drone_lidar_odometry_bridge.py" 2>/dev/null || true
     pkill -9 -f "drone_cpu_hover_bridge.py" 2>/dev/null || true
     pkill -9 -f "lidar_icp_odometry.py" 2>/dev/null || true
     echo -e "${GREEN}✅ Tüm simülasyon, QGC ve köprü süreçleri temizlendi.${NC}"
@@ -63,20 +64,24 @@ rm -f /tmp/px4_lock* /tmp/px4-sock* /tmp/px4_sitl.log 2>/dev/null || true
 rm -f "$PX4_DIR/build/px4_sitl_default/rootfs/parameters"* 2>/dev/null || true
 
 # Dünyayı Belirle (Özel Organik Kaya Mağarası / Eşyalı Ev)
-echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-echo -e " 🌍 ${GREEN}Simülasyon Dünyasını Seçin:${NC}"
-echo -e "   [1] 🦇 ${YELLOW}Özel Organik Kaya Mağarası${NC} (benim_magaram - Dron Giriş Önünde, Keşif Kampı, Kutular)"
-echo -e "   [2] 🏠 ${CYAN}Eşyalı ve Dokulu Büyük Ev${NC} (buyuk_ev - 0 Kasma, %100 Hız, 280k+ Splat)"
-echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-read -t 10 -p "Seçiminiz [1/2, varsayılan: 1]: " WORLD_CHOICE
-if [ "$WORLD_CHOICE" == "2" ]; then
-    SECILEN_DUNYA="buyuk_ev"
-    DUNYA_POSE="0.0,-3.5,0.20,0,0,1.5708"
-    DUNYA_BASLIK="Yüksek Tavanlı Tam Kapalı Büyük Ev (6m Tavan, Sıfır Dış Alan)"
-else
+WORLD_CHOICE="${1:-}"
+if [ -z "$WORLD_CHOICE" ]; then
+    echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+    echo -e " 🌍 ${GREEN}Simülasyon Dünyasını Seçin:${NC}"
+    echo -e "   [1] 🦇 ${YELLOW}Özel Organik Kaya Mağarası${NC} (benim_magaram - Dron Giriş Önünde, Keşif Kampı, Kutular)"
+    echo -e "   [2] 🏠 ${CYAN}Eşyalı ve Dokulu Büyük Ev${NC} (buyuk_ev - 0 Kasma, %100 Hız, 280k+ Splat)"
+    echo -e "${CYAN}----------------------------------------------------------------------${NC}"
+    read -t 10 -p "Seçiminiz [1/2, varsayılan: 2]: " WORLD_CHOICE
+fi
+
+if [ "$WORLD_CHOICE" == "1" ]; then
     SECILEN_DUNYA="benim_magaram"
     DUNYA_POSE="4.0,0.0,1.5,0,0,0"
     DUNYA_BASLIK="Temiz Doğal Kaya Tüneli (Tam Mağaranın İçi Başlangıç)"
+else
+    SECILEN_DUNYA="buyuk_ev"
+    DUNYA_POSE="0.0,-3.5,0.20,0,0,1.5708"
+    DUNYA_BASLIK="Yüksek Tavanlı Tam Kapalı Büyük Ev (6m Tavan, Sıfır Dış Alan)"
 fi
 
 echo -e "\n${GREEN}🚀 [1/2] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor: ${DUNYA_BASLIK}...${NC}"
@@ -100,10 +105,10 @@ if [ -d "$PX4_DIR" ]; then
     done
     echo -e "\n${GREEN}✅ Gazebo & PX4 başarıyla açıldı!${NC}"
     
-    # Sistemin en başından itibaren GPS'i sıfırlamak ve Lidar Odometriyi aktif tutmak için
-    # arka planda %100 CPU tabanlı Lidar Odometri (Hover) motorunu başlatıyoruz.
-    echo -e "${YELLOW}🛰️ [CPU HOVER SİSTEMİ] Donanımsal Olarak GPS Sökülüyor ve CPU Odometri Başlatılıyor...${NC}"
-    nohup python3 drone_cpu_hover_bridge.py > /tmp/cpu_hover.log 2>&1 &
+    # Sistemin en başından itibaren GPS'i sıfırlamak ve 3B Lidar Odometrisini aktif tutmak için
+    # arka planda Lidar Odometri (ICP) motorunu başlatıyoruz.
+    echo -e "${YELLOW}🛰️ [LİDAR ODOMETRİ SİSTEMİ] Donanımsal Olarak GPS Devredışı Bırakılıyor ve Lidar Odometri Başlatılıyor...${NC}"
+    nohup python3 -u drone_lidar_odometry_bridge.py --mode lidar > /tmp/lidar_odometry.log 2>&1 &
     LIDAR_PID=$!
     
     sleep 3  # Parametrelerin otopilota işlenmesi için 3 saniye bekle
