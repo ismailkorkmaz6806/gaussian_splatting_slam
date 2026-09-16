@@ -534,6 +534,7 @@ class LidarOdometryPX4Bridge:
 
                 usec = int(time.time() * 1e6)
                 try:
+                    # 1. Resmi MAVLink ODOMETRY (#331) - 3B Poz ve Hız
                     self.mav.mav.odometry_send(
                         usec,
                         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
@@ -546,6 +547,16 @@ class LidarOdometryPX4Bridge:
                         COV_VEL_21,
                         0,
                         mavutil.mavlink.MAV_ESTIMATOR_TYPE_VIO
+                    )
+
+                    # 2. Resmi MAVLink VISION_POSITION_ESTIMATE (#102) - Görsel Odometri Konum Beslemesi
+                    roll, pitch, yaw = self.current_euler_ned
+                    self.mav.mav.vision_position_estimate_send(
+                        usec,
+                        x, y, z,
+                        roll, pitch, yaw,
+                        COV_POSE_21,
+                        self.odom_count % 256
                     )
                 except Exception:
                     pass
