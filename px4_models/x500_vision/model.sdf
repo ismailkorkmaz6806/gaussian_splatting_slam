@@ -158,7 +158,7 @@
         <gz_frame_id>forward_lidar_link</gz_frame_id>
         <pose>0 0 0.02 0 0 0</pose>
         <update_rate>15</update_rate>
-        <topic>/forward_lidar/points</topic>
+        <topic>/forward_lidar</topic>
         <ray>
           <scan>
             <horizontal>

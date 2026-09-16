@@ -301,6 +301,7 @@ class LidarOdometryPX4Bridge:
         print("⚙️  [AŞAMA 1] PX4 Parametreleri GPS-Denied Lidar & Odometri Moduna Yapılandırılıyor...")
         params = [
             ("SIM_GZ_EN_GPS", 0, True),
+            ("SIM_GZ_EN_ODOM", 0, True),
             ("SYS_FAILURE_EN", 0, True),
             ("EKF2_GPS_CTRL", 0, True),
             ("EKF2_GPS_CHECK", 0, True),
@@ -435,8 +436,9 @@ class LidarOdometryPX4Bridge:
                 dz = z_ned - self.sim_pos_ned[2]
                 err_cm = math.sqrt(dx*dx + dy*dy + dz*dz) * 100.0
                 print(f"📊 [SLAM vs GT] SLAM: ({x_ned:+5.2f}, {y_ned:+5.2f}, {-z_ned:4.2f}m) | GERÇEK: ({self.sim_pos_ned[0]:+5.2f}, {self.sim_pos_ned[1]:+5.2f}, {-self.sim_pos_ned[2]:4.2f}m) | HATA: {err_cm:4.1f} cm (Harita: {submap_len} nokta)")
-        except Exception:
-            pass
+        except Exception as e:
+            if self.lidar_frame_count < 3:
+                print(f"⚠️ [SLAM HATA] process_xyz istisna: {e}")
 
     def on_forward_lidar(self, msg: PointCloudPacked):
         """Gazebo GPU Lidarından gelen PointCloudPacked mesajını işler."""
@@ -450,9 +452,12 @@ class LidarOdometryPX4Bridge:
             raw_arr = np.frombuffer(msg.data, dtype=np.float32)
             stride_floats = point_step // 4
             xyz = raw_arr.reshape(-1, stride_floats)[:, :3]
+            if self.lidar_frame_count == 0:
+                print(f"📦 [LİDAR AKTİF] İlk nokta bulutu Gazebo'dan alındı ({len(xyz)} nokta, PointCloudPacked)!")
             self.process_xyz(xyz)
-        except Exception:
-            pass
+        except Exception as e:
+            if self.lidar_frame_count == 0:
+                print(f"⚠️ [LİDAR HATA] on_forward_lidar istisna: {e}")
 
     def on_laser_scan(self, msg: LaserScan):
         """Gazebo GPU Lidarından gelen LaserScan mesajını 3B noktalara dönüştürüp işler."""
@@ -468,9 +473,12 @@ class LidarOdometryPX4Bridge:
             y = ranges * np.cos(V) * np.sin(H)
             z = ranges * np.sin(V)
             xyz = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
+            if self.lidar_frame_count == 0:
+                print(f"📦 [LİDAR AKTİF] İlk lazer taraması Gazebo'dan alındı ({len(xyz)} ışın, LaserScan)!")
             self.process_xyz(xyz)
-        except Exception:
-            pass
+        except Exception as e:
+            if self.lidar_frame_count == 0:
+                print(f"⚠️ [LİDAR HATA] on_laser_scan istisna: {e}")
 
     def on_gazebo_odometry(self, msg: Odometry):
         """Gazebo Ground-Truth odometrisi (Referans veya sim modu için)."""
@@ -607,6 +615,7 @@ class LidarOdometryPX4Bridge:
         # 1. Gazebo GPU Lidar Konularına Abone Ol (Hem PointCloud hem LaserScan formatlarını destekle)
         pointcloud_topics = [
             "/forward_lidar/points",
+            "/forward_lidar/points/points",
             "/forward_lidar",
             "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points",
             "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points",
@@ -618,6 +627,7 @@ class LidarOdometryPX4Bridge:
 
         laserscan_topics = [
             "/forward_lidar",
+            "/forward_lidar/points",
             "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan",
             "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan",
             "/model/x500_vision_0/forward_lidar",
