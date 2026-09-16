@@ -316,7 +316,7 @@ class LidarOdometryPX4Bridge:
             ("NAV_DLL_ACT", 0, True),
             ("COM_RC_IN_MODE", 1, True),
             ("COM_ARM_WO_GPS", 1, True),     # GPS olmadan Arm izni
-            ("COM_FLTMODE_BOOT", 4, True),   # Doğrudan Hold modunda açıl
+            ("COM_FLTMODE_BOOT", 2, True),   # Doğrudan Position Control (POSCTL) modunda açıl
             ("COM_ARM_MAG_STR", 0, True),
             ("COM_ARM_MAG_ANG", -1, True),
             ("MIS_TAKEOFF_ALT", 1.5, False),

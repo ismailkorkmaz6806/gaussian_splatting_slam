@@ -61,6 +61,8 @@ trap cleanup EXIT INT TERM
 # -------------------------------------------------------------------------
 pkill -9 px4 2>/dev/null || true
 pkill -9 -f "gz sim" 2>/dev/null || true
+pkill -9 -f "drone_lidar_odometry_bridge.py" 2>/dev/null || true
+pkill -9 -f "gps_kontrol.py" 2>/dev/null || true
 rm -f /tmp/px4_lock* /tmp/px4-sock* /tmp/px4_sitl.log 2>/dev/null || true
 rm -f "$PX4_DIR/build/px4_sitl_default/rootfs/parameters"* 2>/dev/null || true
 
