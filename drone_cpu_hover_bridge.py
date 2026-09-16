@@ -106,6 +106,7 @@ class CPUHoverEngine:
 
         self.odom_count = 0
         self.time_offset_ns = 0
+        self.initial_pose = None
 
     def connect_px4(self):
         """PX4 SITL MAVLink portuna (14580) doğrudan ve gecikmesiz bağlanır."""
@@ -265,6 +266,15 @@ class CPUHoverEngine:
             y_ned = float(pos.x)
             z_ned = -float(pos.z)
 
+            # İlk ölçümde kalkış noktasını (0,0,0) olarak sabitle (3.5m savrulmayı önler)
+            if self.initial_pose is None:
+                self.initial_pose = [x_ned, y_ned, z_ned]
+                print(f"🎯 [CPU HOVER] Kalkış Noktası Kilitlendi: GZ({pos.x:.2f}, {pos.y:.2f}) -> Yerel (0.00, 0.00, 0.00)")
+
+            rel_x = x_ned - self.initial_pose[0]
+            rel_y = y_ned - self.initial_pose[1]
+            rel_z = z_ned - self.initial_pose[2]
+
             # -------------------------------------------------------------
             # 2. Yönelim / Kuaterniyon Dönüşümü (FLU/ENU -> FRD/NED)
             # -------------------------------------------------------------
@@ -284,7 +294,7 @@ class CPUHoverEngine:
             wz_frd = -float(twist.angular.z)
 
             with self.lock:
-                self.current_pos_ned = [x_ned, y_ned, z_ned]
+                self.current_pos_ned = [rel_x, rel_y, rel_z]
                 self.current_euler_ned = [roll, pitch, yaw]
                 self.current_quat_ned = [q_FRD_to_NED[0], q_FRD_to_NED[1], q_FRD_to_NED[2], q_FRD_to_NED[3]]
                 self.current_vel_frd = [vx_frd, vy_frd, vz_frd]
@@ -331,15 +341,7 @@ class CPUHoverEngine:
                 usec = int(time.time() * 1e6)
 
                 try:
-                    # 1. VISION_POSITION_ESTIMATE (Mesaj #102)
-                    self.mav.mav.vision_position_estimate_send(
-                        usec,
-                        x, y, z,
-                        roll, pitch, yaw,
-                        COV_POSE_21
-                    )
-
-                    # 2. ODOMETRY (Mesaj #331) - EKF2 Tam Poz ve Hız Senkronizasyonu
+                    # EKF2 Tam Poz ve Hız Senkronizasyonu (Resmi PX4 MAVLink ODOMETRY #331)
                     self.mav.mav.odometry_send(
                         usec,
                         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
