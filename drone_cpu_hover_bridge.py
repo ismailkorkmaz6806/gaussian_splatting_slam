@@ -365,6 +365,29 @@ class CPUHoverEngine:
             if elapsed < dt:
                 time.sleep(dt - elapsed)
 
+    def heartbeat_monitor_worker(self):
+        """PX4 yeniden başladığında veya bağlantı koptuğunda parametreleri otomatik tazeler."""
+        last_hb = time.time()
+        while self.is_running:
+            try:
+                # Otopilottan gelen kalp atışlarını takip et
+                msg = self.mav.recv_match(type=['HEARTBEAT'], blocking=False)
+                now = time.time()
+                if msg:
+                    # Uzun süreli sessizlikten sonra yeni heartbeat geldiyse (PX4 yeniden başlatılmışsa)
+                    if (now - last_hb) > 4.0:
+                        print("\n🔄 [CPU HOVER] PX4 Yeniden Başlatıldı! Parametreler ve Origin Tekrar Enjekte Ediliyor...")
+                        self.configure_px4_parameters()
+                        self.send_global_origin()
+                    last_hb = now
+                elif (now - last_hb) > 5.0:
+                    # 5 saniyedir heartbeat yok, yeniden bağlanmayı dene
+                    self.connect_px4()
+                    last_hb = time.time()
+            except Exception:
+                pass
+            time.sleep(0.5)
+
     def start(self):
         if not self.connect_px4():
             print("❌ Otopilota bağlanılamadı, çıkılıyor.")
@@ -393,6 +416,10 @@ class CPUHoverEngine:
         timesync_thread = threading.Thread(target=self.timesync_worker, daemon=True)
         timesync_thread.start()
 
+        # Otopilot Canlılık ve Otomatik Yeniden Bağlanma Takipçisi
+        hb_thread = threading.Thread(target=self.heartbeat_monitor_worker, daemon=True)
+        hb_thread.start()
+
         print(f"\n🚀 [AŞAMA 2 AKTİF] {self.publish_rate} Hz EKF2 Odometri Yayını Devrede!")
         print("📍 Koordinat Çerçevesi : NED (X=Kuzey, Y=Doğu, Z=-İrtifa)")
         print("📍 Kovaryans Değeri    : 1e-4 (Geçerli Pozitif Matris)")
@@ -412,5 +439,18 @@ class CPUHoverEngine:
 
 
 if __name__ == "__main__":
+    import os
+    import subprocess
+
+    # Port çakışmasını önle: Varsa önceki hayalet/asılı kopya süreçleri temizle
+    curr_pid = os.getpid()
+    try:
+        raw_pids = subprocess.check_output(f"pgrep -f 'drone_cpu_hover_bridge.py' || true", shell=True).decode().split()
+        for p in raw_pids:
+            if int(p) != curr_pid:
+                os.kill(int(p), 9)
+    except Exception:
+        pass
+
     engine = CPUHoverEngine(publish_rate=35.0)
     engine.start()
