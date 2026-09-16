@@ -118,61 +118,38 @@
       <child>drone_spotlight_link</child>
     </joint>
 
-    <!-- 📡 Dron Ön 3B Katı Hal (Solid-State) Lidar Sensörü (Forward-Facing 3D LiDAR) -->
+    
+
+    
+    
+
+    
+    <!-- 📡 Dron Tepe 360 Derece 3D Lidar Sensörü -->
     <link name="forward_lidar_link">
-      <pose relative_to="base_link">0.15 0 0.18 0 0.08 0</pose>
+      <pose relative_to="base_link">0 0 0.25 0 0 0</pose>
       <inertial>
-        <mass>0.02</mass>
+        <mass>0.1</mass>
         <inertia>
-          <ixx>0.0001</ixx>
-          <iyy>0.0001</iyy>
-          <izz>0.0001</izz>
+          <ixx>0.001</ixx>
+          <iyy>0.001</iyy>
+          <izz>0.001</izz>
         </inertia>
       </inertial>
-      <visual name="forward_lidar_visual">
+      <visual name="top_lidar_visual">
         <geometry>
-          <box><size>0.04 0.05 0.03</size></box>
+          <cylinder><radius>0.03</radius><length>0.04</length></cylinder>
         </geometry>
         <material>
           <ambient>0.1 0.1 0.1 1</ambient>
           <diffuse>0.2 0.2 0.2 1</diffuse>
         </material>
       </visual>
-      <sensor name="forward_lidar" type="gpu_lidar">
-        <gz_frame_id>forward_lidar_link</gz_frame_id>
-        <pose>0 0 0 0 0 0</pose>
-        <update_rate>10</update_rate>
-        <ray>
-          <scan>
-            <horizontal>
-              <samples>200</samples>
-              <resolution>1</resolution>
-              <min_angle>-0.74</min_angle>
-              <max_angle>0.74</max_angle>
-            </horizontal>
-            <vertical>
-              <samples>24</samples>
-              <resolution>1</resolution>
-              <min_angle>-0.45</min_angle>
-              <max_angle>0.45</max_angle>
-            </vertical>
-          </scan>
-          <range>
-            <min>0.2</min>
-            <max>30.0</max>
-            <resolution>0.01</resolution>
-          </range>
-        </ray>
-        <always_on>1</always_on>
-        <visualize>false</visualize>
-        <topic>/forward_lidar</topic>
-      </sensor>
+      
     </link>
     <joint name="forward_lidar_joint" type="fixed">
       <parent>base_link</parent>
       <child>forward_lidar_link</child>
     </joint>
-
     <plugin
       filename="gz-sim-odometry-publisher-system"
       name="gz::sim::systems::OdometryPublisher">

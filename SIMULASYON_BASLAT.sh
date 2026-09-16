@@ -48,6 +48,8 @@ cleanup() {
     pkill -9 px4 2>/dev/null || true
     pkill -9 -f "gz sim" 2>/dev/null || true
     pkill -9 ruby 2>/dev/null || true
+    pkill -9 -f "drone_cpu_hover_bridge.py" 2>/dev/null || true
+    pkill -9 -f "lidar_icp_odometry.py" 2>/dev/null || true
     echo -e "${GREEN}✅ Tüm simülasyon, QGC ve köprü süreçleri temizlendi.${NC}"
 }
 trap cleanup EXIT INT TERM
@@ -69,20 +71,22 @@ echo -e "${CYAN}----------------------------------------------------------------
 read -t 10 -p "Seçiminiz [1/2, varsayılan: 1]: " WORLD_CHOICE
 if [ "$WORLD_CHOICE" == "2" ]; then
     SECILEN_DUNYA="buyuk_ev"
-    DUNYA_POSE="0,-12,0.2,0,0,1.5708"
-    DUNYA_BASLIK="Eşyalı ve Dokulu Büyük Ev"
+    DUNYA_POSE="0.0,-3.5,0.20,0,0,1.5708"
+    DUNYA_BASLIK="Yüksek Tavanlı Tam Kapalı Büyük Ev (6m Tavan, Sıfır Dış Alan)"
 else
     SECILEN_DUNYA="benim_magaram"
-    DUNYA_POSE="-3.0,0.0,0.20,0,0,0"
-    DUNYA_BASLIK="Temiz Doğal Kaya Tüneli (Girişin 3m Önü Başlangıç)"
+    DUNYA_POSE="4.0,0.0,1.5,0,0,0"
+    DUNYA_BASLIK="Temiz Doğal Kaya Tüneli (Tam Mağaranın İçi Başlangıç)"
 fi
 
 echo -e "\n${GREEN}🚀 [1/2] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor: ${DUNYA_BASLIK}...${NC}"
 if [ -d "$PX4_DIR" ]; then
     cd "$PX4_DIR"
     export DISPLAY="${DISPLAY:-:0}"
-    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-    export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$PX4_DIR/Tools/simulation/gz/worlds/aws_small_house_world/models:$PX4_DIR/Tools/simulation/gz/models:/home/ismail/gaussian_splatting_slam/gazebo_cave_world/worlds/models"
+    # Güncel dünyaları PX4 dizinine senkronize et
+    cp -f "$SCRIPT_DIR/gazebo_cave_world/worlds/buyuk_ev.sdf" "$PX4_DIR/Tools/simulation/gz/worlds/buyuk_ev.sdf" 2>/dev/null || true
+    
+    export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$SCRIPT_DIR/gazebo_cave_world/worlds:$PX4_DIR/Tools/simulation/gz/worlds/aws_small_house_world/models:$PX4_DIR/Tools/simulation/gz/models:$SCRIPT_DIR/gazebo_cave_world/worlds/models"
     export PX4_GZ_WORLD="$SECILEN_DUNYA"
     export PX4_GZ_MODEL_POSE="$DUNYA_POSE"
     make px4_sitl gz_x500_vision > /tmp/px4_sitl.log 2>&1 &
@@ -95,8 +99,16 @@ if [ -d "$PX4_DIR" ]; then
         sleep 1
     done
     echo -e "\n${GREEN}✅ Gazebo & PX4 başarıyla açıldı!${NC}"
-    # Kapalı alan / GPS-denied ARM kilidini otomatik kaldır
-    python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.configure_indoor_preflight()" 2>/dev/null || true
+    
+    # Sistemin en başından itibaren GPS'i sıfırlamak ve Lidar Odometriyi aktif tutmak için
+    # arka planda %100 CPU tabanlı Lidar Odometri (Hover) motorunu başlatıyoruz.
+    echo -e "${YELLOW}🛰️ [CPU HOVER SİSTEMİ] Donanımsal Olarak GPS Sökülüyor ve CPU Odometri Başlatılıyor...${NC}"
+    nohup python3 drone_cpu_hover_bridge.py > /tmp/cpu_hover.log 2>&1 &
+    LIDAR_PID=$!
+    
+    sleep 3  # Parametrelerin otopilota işlenmesi için 3 saniye bekle
+    python3 gps_kontrol.py  # Ayni terminale GPS'in kapali oldugunu kanitla
+    
     # Kamerayı otomatik dronun arkasına kilitle (Mağara içine girince dronu kaybetmemek için)
     (
         sleep 3
@@ -155,25 +167,26 @@ echo ""
 
 while true; do
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    echo "  [1] 🔴 GPS'i KAPAT (param set EKF2_GPS_CTRL 0)"
-    echo "  [2] 🟢 GPS'i AÇ   (param set EKF2_GPS_CTRL 7)"
+    echo "  [1] 🔴 GPS'i KAPAT (failure gps off)"
+    echo "  [2] 🟢 GPS'i AÇ   (failure gps ok)"
     echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
     echo "  [4] 🚀 Dronu ARM ET (Motorları Başlat)"
-    echo "  [5] 🛑 Dronu DISARM ET (Motorları Durdur)"
+    echo "  [5] 🛫 GPS'siz Havalan (1.5m Takeoff & Çivi Gibi Kal)"
+    echo "  [6] 🛑 Dronu DISARM ET (Motorları Durdur / İndir)"
     echo "  [0] ❌ Simülasyonu Kapat ve Çık"
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    read -p "Seçiminiz [0-5]: " CMD_SECIM
+    read -p "Seçiminiz [0-6]: " CMD_SECIM
 
     case $CMD_SECIM in
         1)
-            echo -e "${YELLOW}🛰️ GPS Kapatılıyor (EKF2_GPS_CTRL 0)...${NC}"
+            echo -e "${YELLOW}🛰️ GPS Donanımsal Olarak Kapatılıyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.set_gps_enabled(False)" 2>/dev/null || true
-            echo -e "${RED}✅ GPS Kapatıldı (GPS-Denied Modu Aktif).${NC}"
+            echo -e "${RED}✅ GPS Kapatıldı (QGC'de uydu sıfırlandı).${NC}"
             ;;
         2)
-            echo -e "${YELLOW}🛰️ GPS Açılıyor (EKF2_GPS_CTRL 7)...${NC}"
+            echo -e "${YELLOW}🛰️ GPS Açılıyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.set_gps_enabled(True)" 2>/dev/null || true
-            echo -e "${GREEN}✅ GPS Açıldı (3D Fix Aktif).${NC}"
+            echo -e "${GREEN}✅ GPS Açıldı.${NC}"
             ;;
         3)
             echo -e "${GREEN}🎥 Canlı FPV ve 3DGS Haritalama Kokpiti Açılıyor...${NC}"
@@ -184,6 +197,10 @@ while true; do
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.arm(force=True)" 2>/dev/null || true
             ;;
         5)
+            echo -e "${GREEN}🛫 GPS'siz 1.5 Metreye Otonom Kalkış Yapılıyor...${NC}"
+            python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.takeoff(1.5)" 2>/dev/null || true
+            ;;
+        6)
             echo -e "${YELLOW}🛑 Dron DISARM Ediliyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.disarm()" 2>/dev/null || true
             ;;

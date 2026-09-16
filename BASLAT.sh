@@ -57,9 +57,12 @@ while true; do
             echo "  [1] USB Web Kamerası (/dev/video0)"
             echo "  [2] Gerçek Dron Canlı Yayını (RTSP / Wi-Fi / Fiber)"
             echo "  [3] 🏡 Gazebo + PX4 SITL Büyük Ev (Tek Tık Otonom Uçuş & 3DGS)"
+            echo "  [4] 🎨 3B Tasarım Modu (Yeni Büyük Evi İncele - Gazebo)"
             echo ""
-            read -p "Seçiminiz [1-3]: " K_SECIM
-            if [ "$K_SECIM" == "3" ]; then
+            read -p "Seçiminiz [1-4]: " K_SECIM
+            if [ "$K_SECIM" == "4" ]; then
+                ./TASARIM_MODU.sh
+            elif [ "$K_SECIM" == "3" ]; then
                 ./SIMULASYON_BASLAT.sh
             elif [ "$K_SECIM" == "2" ]; then
                 read -p "RTSP / HTTP Yayın Linki (Varsayılan: rtsp://192.168.1.100:8554/stream): " RTSP_URL

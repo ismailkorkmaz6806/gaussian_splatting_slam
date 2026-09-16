@@ -11,8 +11,8 @@
     <atmosphere type="adiabatic"/>
     <scene>
       <grid>false</grid>
-      <ambient>0.75 0.75 0.75 1</ambient>
-      <background>0.7 0.8 0.9 1</background>
+      <ambient>0.85 0.85 0.85 1</ambient>
+      <background>0.1 0.1 0.1 1</background>
       <shadows>false</shadows>
     </scene>
     <spherical_coordinates>
@@ -23,69 +23,56 @@
       <heading_deg>0</heading_deg>
     </spherical_coordinates>
 
-    <!-- Dış Alan Güneş Işığı -->
-    <light name="sun" type="directional">
+    <!-- İç Mekan Ana Tavan Aydınlatması (Homojen, Gölgesiz, Yüksek FPS) -->
+    <light name="center_light" type="point">
       <cast_shadows>false</cast_shadows>
-      <pose>0 -10 20 0 0 0</pose>
-      <diffuse>0.85 0.85 0.80 1</diffuse>
-      <specular>0.1 0.1 0.1 1</specular>
+      <pose>0 0 5.5 0 0 0</pose>
+      <diffuse>0.9 0.9 0.85 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
       <attenuation>
-        <range>1000</range>
-        <constant>0.9</constant>
-        <linear>0.01</linear>
+        <range>40</range>
+        <constant>0.8</constant>
+        <linear>0.02</linear>
         <quadratic>0.001</quadratic>
       </attenuation>
-      <direction>0.3 0.6 -0.8</direction>
     </light>
 
-    <!-- Ev İçi Homojen Aydınlatma (Yüksek FPS) -->
-    <light name="indoor_light" type="directional">
+    <light name="north_light" type="point">
       <cast_shadows>false</cast_shadows>
-      <pose>0 0 10 0 0 0</pose>
-      <diffuse>0.65 0.65 0.60 1</diffuse>
+      <pose>0 5 5.5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.1 0.1 0.1 1</specular>
-      <direction>0 0 -1</direction>
+      <attenuation>
+        <range>30</range>
+        <constant>0.8</constant>
+        <linear>0.03</linear>
+        <quadratic>0.002</quadratic>
+      </attenuation>
     </light>
 
-    <!-- Dış Bahçe / Yeşil Çim Zemin (Y: -6 ile -26 arası - Sıfır Çakışma) -->
-    <model name="dis_bahce_zemin">
-      <static>true</static>
-      <pose>0 -16 0 0 0 0</pose>
-      <link name="link">
-        <collision name="collision">
-          <geometry>
-            <plane><normal>0 0 1</normal><size>30 20</size></plane>
-          </geometry>
-          <surface>
-            <friction>
-              <ode>
-                <mu>100</mu>
-                <mu2>50</mu2>
-              </ode>
-            </friction>
-          </surface>
-        </collision>
-        <visual name="visual">
-          <geometry>
-            <plane><normal>0 0 1</normal><size>30 20</size></plane>
-          </geometry>
-          <material>
-            <ambient>0.25 0.55 0.25 1</ambient>
-            <diffuse>0.30 0.60 0.30 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
+    <light name="south_light" type="point">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 -5 5.5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.8</constant>
+        <linear>0.03</linear>
+        <quadratic>0.002</quadratic>
+      </attenuation>
+    </light>
 
-    <!-- Ev İçi Parke Zemin (Y: -6 ile +6 arası) -->
-    <model name="parke_zemin">
+    <!-- ========================================================================= -->
+    <!-- 🏢 ZEMİN (20m x 20m Tamamen Kapalı Parke/Fayans Doku, Sıfır Dış Alan) -->
+    <!-- ========================================================================= -->
+    <model name="oda_zemini">
       <static>true</static>
       <pose>0 0 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry>
-            <plane><normal>0 0 1</normal><size>12 12</size></plane>
+            <plane><normal>0 0 1</normal><size>20 20</size></plane>
           </geometry>
           <surface>
             <friction>
@@ -98,157 +85,308 @@
         </collision>
         <visual name="visual">
           <geometry>
-            <plane><normal>0 0 1</normal><size>12 12</size></plane>
+            <plane><normal>0 0 1</normal><size>20 20</size></plane>
           </geometry>
           <material>
-            <ambient>0.6 0.4 0.2 1</ambient>
-            <diffuse>0.7 0.45 0.25 1</diffuse>
+            <ambient>0.65 0.50 0.35 1</ambient>
+            <diffuse>0.75 0.58 0.40 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
     </model>
 
-    <!-- Çatı / Tavan -->
-    <model name="cati_tavan">
+    <!-- ========================================================================= -->
+    <!-- 🏠 YÜKSEK TAVAN / ÇATI (6.0 Metre Yükseklik - Ferah Uçuş Alanı) -->
+    <!-- ========================================================================= -->
+    <model name="oda_tavani">
       <static>true</static>
-      <pose>0 0 3.2 0 0 0</pose>
+      <pose>0 0 6.0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <geometry><box><size>12.4 12.4 0.15</size></box></geometry>
+          <geometry><box><size>20.4 20.4 0.2</size></box></geometry>
         </collision>
         <visual name="visual">
-          <geometry><box><size>12.4 12.4 0.15</size></box></geometry>
+          <geometry><box><size>20.4 20.4 0.2</size></box></geometry>
           <material>
-            <ambient>0.8 0.8 0.8 1</ambient>
-            <diffuse>0.85 0.85 0.85 1</diffuse>
+            <ambient>0.85 0.85 0.85 1</ambient>
+            <diffuse>0.90 0.90 0.90 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
     </model>
 
-    <!-- Ev Duvarları ve Çift Kapı Boyutunda Giriş Boşluğu -->
-    <model name="ev_duvarlari">
+    <!-- ========================================================================= -->
+    <!-- 🧱 DIŞ DUVARLAR (4 Tarafı Tamamen Kapalı, 6.0m Yüksek, 20m Uzun) -->
+    <!-- ========================================================================= -->
+    <model name="dis_duvarlar">
       <static>true</static>
-      <pose>0 0 1.6 0 0 0</pose>
+      <pose>0 0 3.0 0 0 0</pose>
 
-      <!-- Dış Kuzey Duvarı (Arka Duvar) -->
-      <link name="dis_kuzey">
-        <pose>0 6 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>12 0.25 3.2</size></box></geometry></collision>
+      <!-- Kuzey Duvarı (Arka) -->
+      <link name="duvar_kuzey">
+        <pose>0 10 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>20.4 0.3 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>12 0.25 3.2</size></box></geometry>
+          <geometry><box><size>20.4 0.3 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
+            <ambient>0.70 0.72 0.75 1</ambient>
+            <diffuse>0.80 0.82 0.85 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
 
-      <!-- Dış Güney Duvarı - SOL KISIM -->
-      <link name="dis_guney_sol">
-        <pose>-3.75 -6 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>4.5 0.25 3.2</size></box></geometry></collision>
+      <!-- Güney Duvarı (Ön - Tamamen Kapalı, Dışarısı Yok) -->
+      <link name="duvar_guney">
+        <pose>0 -10 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>20.4 0.3 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>4.5 0.25 3.2</size></box></geometry>
+          <geometry><box><size>20.4 0.3 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
+            <ambient>0.70 0.72 0.75 1</ambient>
+            <diffuse>0.80 0.82 0.85 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
 
-      <!-- Dış Güney Duvarı - SAĞ KISIM -->
-      <link name="dis_guney_sag">
-        <pose>3.75 -6 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>4.5 0.25 3.2</size></box></geometry></collision>
+      <!-- Doğu Duvarı (Sağ) -->
+      <link name="duvar_dogu">
+        <pose>10 0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.3 20.4 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>4.5 0.25 3.2</size></box></geometry>
+          <geometry><box><size>0.3 20.4 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
+            <ambient>0.65 0.68 0.70 1</ambient>
+            <diffuse>0.75 0.78 0.80 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
 
-      <!-- Kapı Üstü Kirişi (3.0m Genişliğinde Açık Giriş Boşluğu) -->
-      <link name="dis_guney_kapi_ustu">
-        <pose>0 -6 1.25 0 0 0</pose>
-        <collision name="c"><geometry><box><size>3.0 0.25 0.7</size></box></geometry></collision>
+      <!-- Batı Duvarı (Sol) -->
+      <link name="duvar_bati">
+        <pose>-10 0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.3 20.4 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>3.0 0.25 0.7</size></box></geometry>
+          <geometry><box><size>0.3 20.4 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
+            <ambient>0.65 0.68 0.70 1</ambient>
+            <diffuse>0.75 0.78 0.80 1</diffuse>
             <specular>0.1 0.1 0.1 1</specular>
           </material>
         </visual>
       </link>
+    </model>
 
-      <!-- Dış Doğu Duvarı -->
-      <link name="dis_dogu">
-        <pose>6 0 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>0.25 12 3.2</size></box></geometry></collision>
+    <!-- ========================================================================= -->
+    <!-- 🚪 İÇ ODA BÖLMELERİ (Geniş Geçişli Odalar, Yüksek Tavanlar) -->
+    <!-- ========================================================================= -->
+    <model name="ic_bolmeler">
+      <static>true</static>
+      <pose>0 0 3.0 0 0 0</pose>
+
+      <!-- Orta Sol Bölme Duvarı -->
+      <link name="orta_sol">
+        <pose>-5.5 0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>9.0 0.25 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>0.25 12 3.2</size></box></geometry>
+          <geometry><box><size>9.0 0.25 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
+            <ambient>0.80 0.65 0.55 1</ambient>
+            <diffuse>0.85 0.70 0.60 1</diffuse>
           </material>
         </visual>
       </link>
 
-      <!-- Dış Batı Duvarı -->
-      <link name="dis_bati">
-        <pose>-6 0 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>0.25 12 3.2</size></box></geometry></collision>
+      <!-- Orta Sağ Bölme Duvarı -->
+      <link name="orta_sag">
+        <pose>5.5 0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>9.0 0.25 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>0.25 12 3.2</size></box></geometry>
+          <geometry><box><size>9.0 0.25 6.0</size></box></geometry>
           <material>
-            <ambient>0.6 0.25 0.2 1</ambient>
-            <diffuse>0.7 0.3 0.25 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
+            <ambient>0.80 0.65 0.55 1</ambient>
+            <diffuse>0.85 0.70 0.60 1</diffuse>
           </material>
         </visual>
       </link>
 
-      <!-- İç Duvar Sol -->
-      <link name="ic_duvar_sol">
-        <pose>-3.5 0 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>5 0.2 3.2</size></box></geometry></collision>
+      <!-- Dron Geçiş Kapısı Üst Kirişi (Genişlik: 2.0m, Yükseklik: 3.5m Geçiş) -->
+      <link name="orta_kapi_ustu">
+        <pose>0 0 2.25 0 0 0</pose>
+        <collision name="c"><geometry><box><size>2.0 0.25 1.5</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>5 0.2 3.2</size></box></geometry>
+          <geometry><box><size>2.0 0.25 1.5</size></box></geometry>
           <material>
-            <ambient>0.5 0.35 0.2 1</ambient>
-            <diffuse>0.6 0.4 0.25 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
+            <ambient>0.80 0.65 0.55 1</ambient>
+            <diffuse>0.85 0.70 0.60 1</diffuse>
           </material>
         </visual>
       </link>
 
-      <!-- İç Duvar Sağ -->
-      <link name="ic_duvar_sag">
-        <pose>3.5 0 0 0 0 0</pose>
-        <collision name="c"><geometry><box><size>5 0.2 3.2</size></box></geometry></collision>
+      <!-- Dikey Sütun / Kolon 1 (LiDAR & VIO için Güçlü Özellik Noktaları) -->
+      <link name="kolon_1">
+        <pose>-4.0 -4.5 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.8 0.8 6.0</size></box></geometry></collision>
         <visual name="v">
-          <geometry><box><size>5 0.2 3.2</size></box></geometry>
+          <geometry><box><size>0.8 0.8 6.0</size></box></geometry>
           <material>
-            <ambient>0.5 0.35 0.2 1</ambient>
-            <diffuse>0.6 0.4 0.25 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
+            <ambient>0.4 0.45 0.5 1</ambient>
+            <diffuse>0.5 0.55 0.6 1</diffuse>
           </material>
+        </visual>
+      </link>
+
+      <!-- Dikey Sütun / Kolon 2 -->
+      <link name="kolon_2">
+        <pose>4.0 -4.5 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.8 0.8 6.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.8 0.8 6.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.45 0.5 1</ambient>
+            <diffuse>0.5 0.55 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+
+      <!-- Dikey Sütun / Kolon 3 (Kuzey Odası) -->
+      <link name="kolon_3">
+        <pose>-4.0 5.0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.8 0.8 6.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.8 0.8 6.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.45 0.5 1</ambient>
+            <diffuse>0.5 0.55 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+
+      <!-- Dikey Sütun / Kolon 4 (Kuzey Odası) -->
+      <link name="kolon_4">
+        <pose>4.0 5.0 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.8 0.8 6.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.8 0.8 6.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.45 0.5 1</ambient>
+            <diffuse>0.5 0.55 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================================================================= -->
+    <!-- 🛋️ İÇ MEKAN EŞYALARI & ENGELLER (3DGS Haritalama ve LiDAR için Zengin Nesneler) -->
+    <!-- ========================================================================= -->
+
+    <!-- Büyük Salon Halısı (Dronun altında kontrast doku oluşturur) -->
+    <model name="salon_halisi">
+      <static>true</static>
+      <pose>0 -4.5 0.005 0 0 0</pose>
+      <link name="link">
+        <visual name="v">
+          <geometry><box><size>6.0 5.0 0.01</size></box></geometry>
+          <material>
+            <ambient>0.15 0.35 0.55 1</ambient>
+            <diffuse>0.20 0.45 0.70 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Büyük L-Koltuk Grubu -->
+    <model name="l_koltuk">
+      <static>true</static>
+      <pose>-2.0 -6.5 0.45 0 0 0</pose>
+      <link name="ana_kisim">
+        <collision name="c"><geometry><box><size>3.5 1.0 0.9</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>3.5 1.0 0.9</size></box></geometry>
+          <material><ambient>0.25 0.25 0.28 1</ambient><diffuse>0.35 0.35 0.38 1</diffuse></material>
+        </visual>
+      </link>
+      <link name="yan_kisim">
+        <pose>1.25 1.25 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>1.0 1.5 0.9</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.0 1.5 0.9</size></box></geometry>
+          <material><ambient>0.25 0.25 0.28 1</ambient><diffuse>0.35 0.35 0.38 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Sehpa / Orta Masa -->
+    <model name="orta_sehpa">
+      <static>true</static>
+      <pose>-0.5 -4.5 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>1.8 1.0 0.5</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.8 1.0 0.5</size></box></geometry>
+          <material><ambient>0.5 0.3 0.15 1</ambient><diffuse>0.6 0.35 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- TV Ünitesi & Kitaplık Duvarı -->
+    <model name="tv_unitesi">
+      <static>true</static>
+      <pose>0 -9.6 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>4.0 0.5 2.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>4.0 0.5 2.0</size></box></geometry>
+          <material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.25 0.25 0.25 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Arka Oda (Laboratuvar / Atölye Masaları ve Kutular) -->
+    <model name="lab_masasi">
+      <static>true</static>
+      <pose>0 6.0 0.45 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>4.5 1.5 0.9</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>4.5 1.5 0.9</size></box></geometry>
+          <material><ambient>0.7 0.7 0.75 1</ambient><diffuse>0.8 0.8 0.85 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Depolama Rafları ve Kutular (Kuzey Duvarı Önü) -->
+    <model name="depo_raflari">
+      <static>true</static>
+      <pose>-6.0 8.5 1.5 0 0 0</pose>
+      <link name="raf1">
+        <collision name="c"><geometry><box><size>4.0 0.8 3.0</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>4.0 0.8 3.0</size></box></geometry>
+          <material><ambient>0.3 0.35 0.4 1</ambient><diffuse>0.35 0.4 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="kutu_yigini">
+      <static>true</static>
+      <pose>6.0 7.5 0.6 0 0 0.3</pose>
+      <link name="kutu1">
+        <collision name="c"><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>1.2 1.2 1.2</size></box></geometry>
+          <material><ambient>0.6 0.45 0.25 1</ambient><diffuse>0.7 0.5 0.3 1</diffuse></material>
         </visual>
       </link>
     </model>
 
     <gui fullscreen="0">
       <camera name="user_camera">
-        <pose>0 -13 4.0 0 0.3 1.57</pose>
+        <pose>0 -8.5 4.5 0 0.35 1.57</pose>
         <view_controller>orbit</view_controller>
       </camera>
     </gui>

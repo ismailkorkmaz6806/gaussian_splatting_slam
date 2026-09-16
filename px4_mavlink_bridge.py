@@ -58,6 +58,7 @@ class PX4VisionBridge:
             self.mav = mavutil.mavlink_connection(self.connection_url, source_system=255, source_component=197)
             self.is_connected = True
             print(" ✅ PX4 MAVLink Görsel Odometri Köprüsü Aktif (Port: 14580)!")
+            self.configure_indoor_preflight()
             return True
         except Exception as e:
             print(f"❌ PX4 MAVLink Bağlantı Hatası: {e}")
@@ -134,29 +135,53 @@ class PX4VisionBridge:
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             )
             print(" 🛑 [PX4 MAVLink]: DISARM Komutu Gönderildi!")
-            return True
         except Exception as e:
             print(f"❌ DISARM Hatası: {e}")
             return False
 
+    def takeoff(self, altitude=1.5):
+        """GPS olmadan 1.5 metreye otonom kalkış yapar ve çivi gibi asılı kalır."""
+        if not self.is_connected or self.mav is None:
+            return False
+        try:
+            # Önce Altitude moduna geçir (Yerde kilitlenmeyi engeller)
+            self.send_nsh_command("commander mode altctl")
+            time.sleep(0.3)
+            self.arm(force=True)
+            time.sleep(0.5)
+            self.send_nsh_command("commander takeoff")
+            self.mav.mav.command_long_send(
+                1, 1,
+                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                float(altitude)
+            )
+            print(f" 🛫 [PX4 MAVLink]: {altitude}m GPS-Siz Kalkış Komutu Gönderildi!")
+            return True
+        except Exception as e:
+            print(f"❌ Kalkış Hatası: {e}")
+            return False
+
     def configure_indoor_preflight(self):
-        """GPS-denied / Mağara ortamında ARM etmeyi engelleyen kontrolleri kaldırır ve Kumandadan ARM'ı etkinleştirir."""
-        self.send_nsh_command("param set COM_ARM_WO_GPS 2")
-        self.send_nsh_command("param set CBRK_IO_SAFETY 22027")
-        self.send_nsh_command("param set CBRK_SUPPLY_CHK 894281")
-        self.send_nsh_command("param set CBRK_USB_CHK 197848")
-        self.send_nsh_command("param set COM_ARM_MAG_STR 0")
-        self.send_nsh_command("param set COM_ARM_MAG_ANG -1")
-        self.send_nsh_command("param set EKF2_MAG_CHECK 0")
-        self.send_nsh_command("param set EKF2_MAG_TYPE 1")
+        print(" ⚙️  [PX4] GPS İptal Ediliyor ve LIDAR (VIO) Otonomi Ayarları Zorlanıyor...")
+        # Lidar Odometri
+        self.send_nsh_command("param set SYS_FAILURE_EN 1")
+        self.send_nsh_command("failure gps off")
+        self.send_nsh_command("param set EKF2_GPS_CTRL 0")
+        self.send_nsh_command("param set EKF2_EV_CTRL 15")
         self.send_nsh_command("param set NAV_RCL_ACT 0")
         self.send_nsh_command("param set NAV_DLL_ACT 0")
-        self.send_nsh_command("param set EKF2_EV_CTRL 0")
-        self.send_nsh_command("param set COM_RCL_EX_T 10")
-        # Kumanda & Joystick ARM Etkinleştirme (COM_RC_IN_MODE=3: Hem RC Kumanda hem QGC/Joystick kabul edilir)
+        
+        # Kalkış / Arm İzinleri (Hayati Önem Taşıyor)
+        self.send_nsh_command("param set COM_ARM_WO_GPS 1")   # GPS yokken ARM (Motor Çalıştırma) izni
+        self.send_nsh_command("param set COM_ARM_MAG_STR 0")  # Pusula gücü kontrolünü kapat
+        self.send_nsh_command("param set COM_ARM_MAG_ANG -1") # Pusula açısı kontrolünü kapat
+        self.send_nsh_command("param set EKF2_MAG_CHECK 0")   # Sensör uyuşmazlığı hatasını yoksay
+        
         self.send_nsh_command("param set COM_RC_IN_MODE 3")
-        self.send_nsh_command("param set MAN_ARM_GESTURE 1")
-        print(" ✅ PX4 Mağara / Kumanda ARM Kilitleri Açıldı (COM_RC_IN_MODE=3, MAN_ARM_GESTURE=1, EKF2_MAG_CHECK=0)!")
+        self.send_nsh_command("param set COM_RCL_EX_T 10")
+        print(" ⚙️  [PX4] Lidar Odometri Kurulumu ve ARM İzinleri Tamamlandı.")
 
     def set_gps_enabled(self, enable: bool):
         """GPS'i otopilotta açar (7) veya tamamen devre dışı bırakır (0)."""
@@ -165,24 +190,18 @@ class PX4VisionBridge:
         
         # 1. Yöntem: Parametre Güncelleme (EKF2_GPS_CTRL)
         self.set_px4_param_int("EKF2_GPS_CTRL", val)
+        self.send_nsh_command(f"param set EKF2_GPS_CTRL {val}")
         
         # GPS Kapatıldığında VIO'nun açık olduğundan emin ol
         if not enable:
             self.set_vision_enabled(True)
         
-        # 2. Yöntem: MAV_CMD_INJECT_FAILURE (Donanımsal GPS Sinyal Kesme Simülasyonu)
-        try:
-            fail_type = 0.0 if enable else 1.0  # 0: OK (Normal), 1: OFF (Sinyal Kesildi)
-            self.mav.mav.command_long_send(
-                1, 1,
-                420, # MAV_CMD_INJECT_FAILURE
-                0,
-                1.0, # param1: FAIL_UNIT_SENSOR_GPS
-                fail_type, # param2: FAIL_TYPE
-                0.0, 0.0, 0.0, 0.0, 0.0
-            )
-        except Exception:
-            pass
+        # 2. Yöntem: NSH ve MAVLink üzerinden GPS Donanımını Tamamen Kapat (QGC'de uydu sayısı 0 olsun)
+        self.send_nsh_command("param set SYS_FAILURE_EN 1")
+        if enable:
+            self.send_nsh_command("failure gps ok")
+        else:
+            self.send_nsh_command("failure gps off")
 
         durum = "AÇIK (7 - GPS Fix Aktif)" if enable else "KAPALI (0 - GPS-Denied Modu Devrede)"
         print(f" 🛰️ [PX4 EKF2 GPS]: {durum}")

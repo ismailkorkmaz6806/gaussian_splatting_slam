@@ -128,7 +128,6 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
         accumulated_lidar_pts = []
         accumulated_lidar_rgb = []
         lidar_scan_count = [0]
-
         def _on_odom(msg):
             try:
                 pos = msg.pose.position
@@ -138,14 +137,21 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                     p = math.copysign(math.pi / 2, sinp)
                 else:
                     p = math.asin(sinp)
-                # Gazebo'da pozitif Y dönüşü burnu aşağı indirir; bu nedenle -p kullanıyoruz (pozitif = yukarı bakış)
                 current_nose_pitch_deg[0] = -math.degrees(p)
+
+                # YAW HESAPLAMA (Lidar Odometri Icin)
+                siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+                cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+                yaw_deg = math.degrees(math.atan2(siny_cosp, cosy_cosp))
 
                 # Dron anlık konumu
                 pos_arr = np.array([float(pos.x), float(pos.y), float(pos.z)], dtype=np.float32)
                 current_drone_pos[0] = pos_arr
 
-                # Kuaterniyondan 3x3 rotasyon matrisi
+                # PX4 BRIDGE'E LİDAR KONUMUNU BAS (Hover Icin)
+                if px4_bridge:
+                    px4_bridge.update_slam_pose(x_cam=float(pos.y), y_cam=-float(pos.z), z_cam=float(pos.x), yaw_deg=yaw_deg)
+
                 qw, qx, qy, qz = float(q.w), float(q.x), float(q.y), float(q.z)
                 current_drone_rot[0] = np.array([
                     [1.0 - 2.0*(qy*qy + qz*qz), 2.0*(qx*qy - qz*qw), 2.0*(qx*qz + qy*qw)],
@@ -157,19 +163,7 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                     if start_flight_pos[0] is None:
                         start_flight_pos[0] = pos_arr.copy()
                     drone_trajectory.append(pos_arr.copy())
-
-                # PX4 Otopilotuna anlık 3B pozu ilet (GPS'siz havada asılı kalma)
-                if px4_bridge and px4_bridge.is_running:
-                    px4_bridge._current_ned_pose = [
-                        float(pos.x), float(pos.y), float(-pos.z),
-                        0.0, float(p), 0.0
-                    ]
-
-                # 100% Full Visual Odometry SLAM (Baştan sona kesintisiz görsel poz kilidi)
-                if not hasattr(_on_odom, "vo_logged"):
-                    _on_odom.vo_logged = True
-                    print("\n 🚀 [100% FULL VISUAL ODOMETRY SLAM AKTİF]: 30 Hz EKF2 Poz Kilidi Devrede (GPS Bağımsızlığı Sağlandı)!")
-            except Exception:
+            except Exception as e:
                 pass
 
         def _on_lidar(msg):
@@ -333,8 +327,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
     recording = False      # Kayıt/tarama aktif mi?
     recorded_frames = []   # Taranan video karelerini bellekte tutan liste
     show_help = True       # Ekran içi kontrol kılavuz kartı (H tuşuyla açılıp kapanabilir)
-    gps_enabled_state = [True]   # Başlangıçta GPS Açık (Dış mekan kalkışı)
-    vio_enabled_state = [False]  # Başlangıçta VIO beklemede (Kullanıcı kalkıştan sonra açacak)
+    gps_enabled_state = [False]   # Başlangıçta GPS Açık (Dış mekan kalkışı)
+    vio_enabled_state = [True]  # Başlangıçta VIO beklemede (Kullanıcı kalkıştan sonra açacak)
     trigger_scan_flag = [False]  # Mouse tıklamasıyla tarama tetikleme
     status_toast_msg = ["Kalkış sonrası [1. VIO AÇ] ardından [2. GPS KAPAT] butonlarına basın."]
     status_toast_time = [time.time()]
@@ -355,8 +349,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
     print("    [Oklar]   : Kamerayı Yukarı / Aşağı Eğ (Tilt)  |  [F]: Sıfırla (0°)")
     print("")
     print(" 🕹️ OTOPİLOT & HARİTALAMA:")
-    print("    [1 veya V]: Visual Odometry (VIO) Aç / Kapat")
-    print("    [2 veya G]: GPS Aç / Kapat (param set EKF2_GPS_CTRL 0)")
+    print("    [1]: Lidar Odometry (Her Zaman Açık)")
+    print("    [2]: GPS (Donanımsal Olarak Söküldü)")
     print("    [3 veya R]: 3B Harita Taramayı Başlat / Bitir (3DGS Modeli Üretir)")
     print("    [ESC veya 0]: Kamerayı Kapat ve Çık")
     print("=" * 76 + "\n")
@@ -398,8 +392,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                         (36, 30), cv2.FONT_HERSHEY_DUPLEX, 0.52, (0, 0, 255), 1)
         else:
             # Normal durumda sol üstte sade durum bilgisi
-            gps_st = "GPS: ACIK" if gps_enabled_state[0] else "GPS: KAPALI (GPS-Denied)"
-            vio_st = "VIO: AKTIF" if vio_enabled_state[0] else "VIO: BEKLEMEDE"
+            gps_st = "GPS: IPTAL" if gps_enabled_state[0] else "GPS: KAPALI (GPS-Denied)"
+            vio_st = "LIDAR ODOMETRY: AKTIF" if vio_enabled_state[0] else "LIDAR ODOMETRY: AKTIF"
             lidar_st = f"3D LIDAR: AKTIF ({lidar_scan_count[0]} scan)" if lidar_scan_count[0] > 0 else "3D LIDAR: BEKLEMEDE"
             cv2.putText(display_frame, f"CANLI KAMERA  |  {gps_st}  |  {vio_st}  |  {lidar_st}", 
                         (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 180), 1)
@@ -601,4 +595,4 @@ if __name__ == "__main__":
     # Terminalden kamera numarası veya RTSP linki alabilir (varsayılan: gazebo)
     src = sys.argv[1] if len(sys.argv) > 1 else "gazebo"
     kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 50
-    run_drone_capture(camera_source=src, target_keyframes=kfs)
+    run_drone_capture(camera_source=src, target_keyframes=kfs)
