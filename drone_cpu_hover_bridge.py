@@ -197,6 +197,7 @@ class CPUHoverEngine:
 
             # 4. Kalkış ve Arm İzinleri (Preflight Check Baypasları)
             ("COM_ARM_WO_GPS", 1, True),      # GPS olmadan Arm izni
+            ("COM_FLTMODE_BOOT", 2, True),    # Başlangıç modu: 2 (Position) - Asla Manual'e düşme
             ("COM_ARM_MAG_STR", 0, True),     # Manyetik sapma kontrolü bypass
             ("COM_ARM_MAG_ANG", -1, True),    # Eğim açısı kontrolü bypass
             ("MIS_TAKEOFF_ALT", 1.5, False),  # Otonom kalkış irtifası 1.5 metre
