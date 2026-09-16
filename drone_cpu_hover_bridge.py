@@ -108,18 +108,38 @@ class CPUHoverEngine:
         self.time_offset_ns = 0
 
     def connect_px4(self):
-        url = f"udp:127.0.0.1:{self.mavlink_port}"
-        print(f"📡 [CPU HOVER] PX4 Otopilotuna bağlanılıyor: {url}...")
-        for attempt in range(20):
-            try:
-                self.mav = mavutil.mavlink_connection(url, source_system=255, source_component=197)
-                self.mav.wait_heartbeat(timeout=3)
-                print("✅ [CPU HOVER] PX4 MAVLink Bağlantısı Kuruldu!")
-                self.configure_px4_parameters()
-                return True
-            except Exception:
-                print(f"⏳ Otopilot bekleniyor... ({attempt+1}/20)")
-                time.sleep(1)
+        # PX4 SITL Onboard MAVLink standardı:
+        # PX4 kendi yerel 14580 portunda dinlerken, dış dünyaya (companion/ROS/offboard) UDP 14540 portundan yayın yapar.
+        urls_to_try = [
+            "udpin:0.0.0.0:14540",
+            "udpout:127.0.0.1:14580",
+            f"udpin:0.0.0.0:{self.mavlink_port}",
+            f"udpout:127.0.0.1:{self.mavlink_port}",
+            f"udp:127.0.0.1:{self.mavlink_port}",
+        ]
+        print(f"📡 [CPU HOVER] PX4 Otopilotuna bağlanılıyor (port 14540 / 14580 taranıyor)...")
+        for attempt in range(25):
+            for url in urls_to_try:
+                try:
+                    conn = mavutil.mavlink_connection(url, source_system=255, source_component=197)
+                    if "udpout" in url:
+                        # PX4'e varlığımızı bildirmek için heartbeat fırlat
+                        conn.mav.heartbeat_send(
+                            mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                            0, 0, 0
+                        )
+                    hb = conn.wait_heartbeat(timeout=0.6)
+                    if hb:
+                        self.mav = conn
+                        print(f"✅ [CPU HOVER] PX4 MAVLink Bağlantısı Kuruldu ({url}, System ID: {self.mav.target_system})!")
+                        self.configure_px4_parameters()
+                        return True
+                    conn.close()
+                except Exception:
+                    pass
+            print(f"⏳ Otopilot bekleniyor... ({attempt+1}/25)")
+            time.sleep(1)
         return False
 
     def send_nsh(self, cmd):
