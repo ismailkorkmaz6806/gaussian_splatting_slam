@@ -2,7 +2,7 @@ import time
 from pymavlink import mavutil
 
 print("📡 PX4 Otopilotuna bağlanılıyor...")
-mav = mavutil.mavlink_connection('udp:127.0.0.1:14580')
+mav = mavutil.mavlink_connection('udpout:127.0.0.1:14580')
 mav.wait_heartbeat(timeout=5)
 
 print("🔍 EKF2_GPS_CTRL parametresi okunuyor...")

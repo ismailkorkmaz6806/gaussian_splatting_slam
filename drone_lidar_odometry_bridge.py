@@ -253,22 +253,27 @@ class LidarOdometryPX4Bridge:
         """PX4 SITL MAVLink portuna (14580) bağlanır."""
         url = f"udpout:127.0.0.1:{self.mavlink_port}"
         print(f"📡 [KÖPRÜ] PX4 Otopilotuna bağlanılıyor: {url}...")
-        try:
-            self.mav = mavutil.mavlink_connection(url, source_system=255, source_component=197)
-            self.mav.target_system = 1
-            self.mav.target_component = 1
-            self.mav.mav.heartbeat_send(
-                mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
-                mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                0, 0, 0
-            )
-            print(f"✅ [KÖPRÜ] PX4 MAVLink Bağlantısı Kuruldu ({url})!")
-            self.configure_px4_parameters()
-            self.send_global_origin()
-            return True
-        except Exception as e:
-            print(f"❌ MAVLink bağlantı hatası: {e}")
-            return False
+        for attempt in range(40):
+            try:
+                self.mav = mavutil.mavlink_connection(url, source_system=255, source_component=197)
+                self.mav.target_system = 1
+                self.mav.target_component = 1
+                self.mav.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0
+                )
+                msg = self.mav.wait_heartbeat(timeout=0.8)
+                if msg:
+                    print(f"✅ [KÖPRÜ] PX4 Otopilotundan Heartbeat Alındı (Sistem ID: {msg.get_srcSystem()})!")
+                    self.configure_px4_parameters()
+                    self.send_global_origin()
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        print("❌ PX4'e bağlanılamadı (Timeout)!")
+        return False
 
     def send_nsh(self, cmd):
         """NSH terminali üzerinden otopilota komut gönderir."""
@@ -584,6 +589,9 @@ class LidarOdometryPX4Bridge:
                 except Exception as e:
                     if tick % 70 == 0:
                         print(f"⚠️ [MAVLINK ODOM HATA]: {e}")
+
+                if tick < 3:
+                    print(f"📡 [ODOM GÖNDERİLDİ] (#{tick}) NED({x:.2f}, {y:.2f}, {z:.2f})")
 
                 if tick < 100 or (tick % 35 == 0):
                     self.send_global_origin()
