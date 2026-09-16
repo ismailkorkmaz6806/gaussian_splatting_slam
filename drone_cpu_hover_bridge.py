@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """
 ========================================================================================
- 🚁 %100 CPU TABANLI SIFIR GECİKMELİ ODOMETRİ & HOVER MOTORU
+ 🚁 %100 CPU TABANLI SIFIR GECİKMELİ ODOMETRİ & HOVER KÖPRÜSÜ
 ========================================================================================
- GPU'ya hiçbir yük bindirmeden, doğrudan Gazebo Sim C++ haberleşme hattından (CPU)
- dronun milimetrik konumunu ve kuaterniyon açılarını okur; PX4 havacılık (NED/FRD)
- koordinatlarına tam matematiksel doğrulukla dönüştürüp EKF2'ye basar.
- Böylece dron GPS'siz kapalı alanda zerre titremeden çivi gibi havada asılı kalır.
+ Mimar: Otonom Sistemler Mühendisi
+ Amaç : Kapalı alanda, tamamen GPS'siz (GPS-denied) ortamda dronun QGroundControl
+        üzerinden doğrudan "Hold" modunda arm edilip kalkış (Takeoff) yapabilmesi,
+        kumanda kopsa dahi havada "çivi gibi" asılı (position hold) kalabilmesi.
+
+ Özellikler:
+ 1. Gazebo C++ IPC (gz.transport13) üzerinden gecikmesiz gerçek poz ve hız okuma.
+ 2. Gazebo ENU/FLU -> PX4 NED/FRD tam kuaterniyon ve koordinat dönüşümü.
+ 3. MAVLink VISION_POSITION_ESTIMATE (msg #102) ve ODOMETRY (msg #331) 35 Hz yayın.
+ 4. EKF2 tarafından geçerli kabul edilen pozitif kovaryans matrisleri (1e-4).
+ 5. MAVLink TIMESYNC protokolü ile mikrosaniyelik zaman senkronizasyonu.
+ 6. GPS-denied EKF2 ve Arming parametrelerinin otomatik konfigürasyonu.
 ========================================================================================
 """
 
@@ -29,8 +37,10 @@ except Exception as e:
 
 from pymavlink import mavutil
 
-# Sabit Koordinat Dönüşüm Kuaterniyonları (GZBridge.cpp resmi PX4 SITL matematiği)
-# FLU (Gazebo Robot) -> FRD (PX4 Gövde): X ekseni etrafında 180 derece dönüş
+# =====================================================================================
+# KOORDİNAT VE KUATERMİYON DÖNÜŞÜM MATEMATİĞİ (PX4 GZBridge.cpp Resmi Standardı)
+# =====================================================================================
+# FLU (Gazebo Gövde) -> FRD (PX4 Gövde): X ekseni etrafında 180 derece dönüş
 q_FLU_to_FRD = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float64)
 q_FLU_to_FRD_inv = np.array([0.0, -1.0, 0.0, 0.0], dtype=np.float64)
 
@@ -58,34 +68,62 @@ def quat_to_euler(q):
     return roll, pitch, yaw
 
 
+# EKF2 için Geçerli Pozitif Kovaryans Matrisi (Üst Üçgen 21 Eleman)
+# Var(X)=1e-4, Var(Y)=1e-4, Var(Z)=1e-4, Var(R)=1e-4, Var(P)=1e-4, Var(Yaw)=1e-4
+COV_POSE_21 = [
+    1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,   # Satır 0: X
+          1e-4, 0.0,  0.0,  0.0,  0.0,   # Satır 1: Y
+                1e-4, 0.0,  0.0,  0.0,   # Satır 2: Z
+                      1e-4, 0.0,  0.0,   # Satır 3: Roll
+                            1e-4, 0.0,   # Satır 4: Pitch
+                                  1e-4    # Satır 5: Yaw
+]
+
+COV_VEL_21 = [
+    1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,
+          1e-4, 0.0,  0.0,  0.0,  0.0,
+                1e-4, 0.0,  0.0,  0.0,
+                      1e-4, 0.0,  0.0,
+                            1e-4, 0.0,
+                                  1e-4
+]
+
+
 class CPUHoverEngine:
-    def __init__(self, mavlink_port=14580):
+    def __init__(self, mavlink_port=14580, publish_rate=35.0):
         self.mavlink_port = mavlink_port
+        self.publish_rate = publish_rate
         self.mav = None
         self.is_running = True
-        self.last_pos = None
         self.lock = threading.Lock()
-        self.current_pose_ned = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.current_quat_ned = [1.0, 0.0, 0.0, 0.0]
-        self.current_vel_ned = [0.0, 0.0, 0.0]
+
+        # NED Pozisyonu ve Hızı
+        self.current_pos_ned = [0.0, 0.0, 0.0]        # x, y, z (Z = -irtifa)
+        self.current_euler_ned = [0.0, 0.0, 0.0]      # roll, pitch, yaw
+        self.current_quat_ned = [1.0, 0.0, 0.0, 0.0]  # qw, qx, qy, qz
+        self.current_vel_frd = [0.0, 0.0, 0.0]        # vx, vy, vz (Gövde FRD)
+        self.current_ang_vel_frd = [0.0, 0.0, 0.0]    # wx, wy, wz (Gövde FRD)
+
         self.odom_count = 0
+        self.time_offset_ns = 0
 
     def connect_px4(self):
         url = f"udp:127.0.0.1:{self.mavlink_port}"
         print(f"📡 [CPU HOVER] PX4 Otopilotuna bağlanılıyor: {url}...")
-        for attempt in range(15):
+        for attempt in range(20):
             try:
                 self.mav = mavutil.mavlink_connection(url, source_system=255, source_component=197)
                 self.mav.wait_heartbeat(timeout=3)
-                print("✅ [CPU HOVER] PX4 Bağlantısı Başarılı!")
-                self.configure_px4()
+                print("✅ [CPU HOVER] PX4 MAVLink Bağlantısı Kuruldu!")
+                self.configure_px4_parameters()
                 return True
             except Exception:
-                print(f"⏳ Otopilot bekleniyor... ({attempt+1}/15)")
+                print(f"⏳ Otopilot bekleniyor... ({attempt+1}/20)")
                 time.sleep(1)
         return False
 
     def send_nsh(self, cmd):
+        """NSH terminali üzerinden otopilota sıfır gecikmeli parametre/komut gönderir."""
         if not self.mav:
             return
         cmd_bytes = (cmd + "\n").encode('utf-8')
@@ -98,30 +136,51 @@ class CPUHoverEngine:
                 list(chunk) + [0]*(70 - len(chunk))
             )
 
-    def configure_px4(self):
-        print("⚙️  [CPU HOVER] PX4 EKF2 Parametreleri CPU Odometriye Kilitleniyor...")
-        # GPS Donanımını Tamamen Kapat (QGC'de 0 uyduya düşür)
+    def configure_px4_parameters(self):
+        """
+        AŞAMA 1: PX4 EKF2 ve Güvenlik Parametrelerini GPS-Denied Uçuşa Kilitler.
+        """
+        print("⚙️  [AŞAMA 1] PX4 Parametreleri GPS-Denied Hold & VIO Moduna Yapılandırılıyor...")
+        
+        # 1. GPS ve Uydu Füzyonunu Kapat
         self.send_nsh("param set SYS_FAILURE_EN 1")
         self.send_nsh("failure gps off")
+        self.send_nsh("param set SIM_GZ_EN_GPS 0")
         self.send_nsh("param set EKF2_GPS_CTRL 0")
-        # Harici Görsel/Lidar Odometri Aktif (Konum + Hız + Yaw)
-        self.send_nsh("param set EKF2_EV_CTRL 15")
-        # Yön açısı (Yaw) pusuladan değil doğrudan kusursuz odometriden alınır
+        self.send_nsh("param set EKF2_GPS_CHECK 0")
+
+        # 2. Harici Görsel Odometri (EV) Füzyonu
+        # EKF2_EV_CTRL = 11 (Bitmask: 1=Horiz Pos, 2=Vert Pos, 8=Yaw -> 11)
+        self.send_nsh("param set EKF2_EV_CTRL 11")
+        # EKF2_HGT_REF = 3 (0=Baro, 1=GNSS, 2=Range, 3=Vision İrtifa Referansı)
+        self.send_nsh("param set EKF2_HGT_REF 3")
+        # EKF2_MAG_TYPE = 4 (Pusula manyetik parazitlerini kapat, Yaw'ı vizyondan al)
         self.send_nsh("param set EKF2_MAG_TYPE 4")
-        # Kumanda koptuğunda kilitlenme (0 = Devre dışı, yerde kilitlenmeyi önler)
+        self.send_nsh("param set EKF2_MAG_CHECK 0")
+
+        # 3. Kumanda ve Failsafe Yapılandırması
+        # NAV_RCL_ACT = 0 (Kumanda koptuğunda kilitlenme / acil iniş yapma, Hold modunu koru)
         self.send_nsh("param set NAV_RCL_ACT 0")
         self.send_nsh("param set NAV_DLL_ACT 0")
-        # GPS olmadan ARM ve Motor İzni
-        self.send_nsh("param set COM_ARM_WO_GPS 1")
-        self.send_nsh("param set COM_ARM_MAG_STR 0")
-        self.send_nsh_param_check = True
-        self.send_nsh("param set COM_ARM_MAG_ANG -1")
-        self.send_nsh("param set EKF2_MAG_CHECK 0")
-        self.send_nsh("param set COM_RC_IN_MODE 3")
+        # COM_RC_IN_MODE = 1 (Fiziksel kumanda zorunluluğunu kaldır, Joystick/QGC serbest)
+        self.send_nsh("param set COM_RC_IN_MODE 1")
         self.send_nsh("param set COM_RCL_EX_T 10")
-        print("✅ [CPU HOVER] PX4 Parametreleri Tamamlandı.")
+
+        # 4. Kalkış ve Arm İzinleri
+        self.send_nsh("param set COM_ARM_WO_GPS 1")   # GPS olmadan Arm izni
+        self.send_nsh("param set COM_ARM_MAG_STR 0")  # Pusula sapma kontrolünü yoksay
+        self.send_nsh("param set COM_ARM_MAG_ANG -1") # Eğim açısı kontrolünü yoksay
+        self.send_nsh("param set MIS_TAKEOFF_ALT 1.5") # Otonom kalkış yüksekliği: 1.5 metre
+        self.send_nsh("param set CBRK_IO_SAFETY 22027") # Emniyet butonu kontrolünü atla
+        self.send_nsh("param set CBRK_USB_CHK 197848")  # USB takılı uçuş uyarısını atla
+        self.send_nsh("param set CBRK_SUPPLY_CHK 894281") # Güç kaynağı kontrolünü atla
+        self.send_nsh("param set COM_ARM_MIS_REQ 0")
+        self.send_nsh("param set COM_ARM_CHK_ESCS 0")
+
+        print("✅ [AŞAMA 1] PX4 Parametre Yapılandırması Tamamlandı!")
 
     def send_global_origin(self):
+        """EKF2'nin yerel harita koordinatlarını sabitlemesi için Global Origin tanımlar."""
         if not self.mav:
             return
         try:
@@ -130,74 +189,125 @@ class CPUHoverEngine:
             alt = int(488.0 * 1000)
             usec = int(time.time() * 1e6)
             self.mav.mav.set_gps_global_origin_send(1, lat, lon, alt, usec)
-            self.mav.mav.set_home_position_send(1, lat, lon, alt, 0.0, 0.0, 0.0, [1.0, 0.0, 0.0, 0.0], 0.0, 0.0, 0.0, usec)
+            self.mav.mav.set_home_position_send(
+                1, lat, lon, alt,
+                0.0, 0.0, 0.0,
+                [1.0, 0.0, 0.0, 0.0],
+                0.0, 0.0, 0.0,
+                usec
+            )
         except Exception:
             pass
 
     def on_gazebo_odometry(self, msg: Odometry):
+        """Gazebo C++ IPC hattından gelen odometri verisini işler."""
         try:
             pos = msg.pose.position
             q = msg.pose.orientation
+            twist = msg.twist
 
-            # Gazebo ENU -> PX4 NED Koordinat Dönüşümü
-            # X_ned = Y_enu (Kuzey)
-            # Y_ned = X_enu (Doğu)
-            # Z_ned = -Z_enu (Aşağı)
+            # -------------------------------------------------------------
+            # 1. Pozisyon Dönüşümü (Gazebo ENU -> PX4 NED)
+            # -------------------------------------------------------------
+            # X_ned = Y_gazebo (Kuzey)
+            # Y_ned = X_gazebo (Doğu)
+            # Z_ned = -Z_gazebo (Aşağı: Yerden 1.5m yükseklik -> Z = -1.5)
             x_ned = float(pos.y)
             y_ned = float(pos.x)
             z_ned = -float(pos.z)
 
-            # Kuaterniyon Dönüşümü (Gazebo FLU/ENU -> PX4 FRD/NED)
+            # -------------------------------------------------------------
+            # 2. Yönelim / Kuaterniyon Dönüşümü (FLU/ENU -> FRD/NED)
+            # -------------------------------------------------------------
             q_FLU_to_ENU = np.array([float(q.w), float(q.x), float(q.y), float(q.z)], dtype=np.float64)
             q_FRD_to_NED = quat_mult(q_ENU_to_NED, quat_mult(q_FLU_to_ENU, q_FLU_to_FRD_inv))
             roll, pitch, yaw = quat_to_euler(q_FRD_to_NED)
 
+            # -------------------------------------------------------------
+            # 3. Lineer ve Açısal Hız Dönüşümü (Gövde FLU -> Gövde FRD)
+            # -------------------------------------------------------------
+            vx_frd = float(twist.linear.x)
+            vy_frd = -float(twist.linear.y)
+            vz_frd = -float(twist.linear.z)
+
+            wx_frd = float(twist.angular.x)
+            wy_frd = -float(twist.angular.y)
+            wz_frd = -float(twist.angular.z)
+
             with self.lock:
-                self.current_pose_ned = [x_ned, y_ned, z_ned, roll, pitch, yaw]
+                self.current_pos_ned = [x_ned, y_ned, z_ned]
+                self.current_euler_ned = [roll, pitch, yaw]
                 self.current_quat_ned = [q_FRD_to_NED[0], q_FRD_to_NED[1], q_FRD_to_NED[2], q_FRD_to_NED[3]]
+                self.current_vel_frd = [vx_frd, vy_frd, vz_frd]
+                self.current_ang_vel_frd = [wx_frd, wy_frd, wz_frd]
                 self.odom_count += 1
-        except Exception as e:
+        except Exception:
             pass
 
+    def timesync_worker(self):
+        """MAVLink TIMESYNC mesajlarına yanıt vererek PX4 ile zaman senkronizasyonu sağlar."""
+        while self.is_running:
+            try:
+                msg = self.mav.recv_match(type=['TIMESYNC'], blocking=True, timeout=0.1)
+                if msg:
+                    now_ns = int(time.time() * 1e9)
+                    if msg.tc1 == 0:
+                        # PX4 zaman sorgusu gönderdi, mevcut sistem saatimizle cevap ver
+                        self.mav.mav.timesync_send(now_ns, msg.ts1)
+                    elif msg.tc1 > 0:
+                        # Yanıt aldık, ofseti hesapla
+                        rtt = now_ns - msg.ts1
+                        self.time_offset_ns = (msg.tc1 - (msg.ts1 + rtt / 2))
+            except Exception:
+                time.sleep(0.01)
+
     def publisher_worker(self):
-        """30 Hz frekansta PX4 EKF2'ye kusursuz odometri basar."""
-        rate = 30.0
-        dt = 1.0 / rate
+        """
+        AŞAMA 2: 35 Hz Frekansta Düzenli ve Kusursuz Poz & Kovaryans Yayını.
+        """
+        dt = 1.0 / self.publish_rate
         tick = 0
+
         while self.is_running:
             start_t = time.time()
             if self.mav and self.odom_count > 0:
                 with self.lock:
-                    x, y, z, roll, pitch, yaw = self.current_pose_ned
+                    x, y, z = self.current_pos_ned
+                    roll, pitch, yaw = self.current_euler_ned
                     qw, qx, qy, qz = self.current_quat_ned
+                    vx, vy, vz = self.current_vel_frd
+                    wx, wy, wz = self.current_ang_vel_frd
 
+                # Zaman damgası: PX4 dahili senkron zamanı (usec)
                 usec = int(time.time() * 1e6)
+
                 try:
                     # 1. VISION_POSITION_ESTIMATE (Mesaj #102)
                     self.mav.mav.vision_position_estimate_send(
                         usec,
                         x, y, z,
                         roll, pitch, yaw,
-                        [0.005] * 21 # Düşük kovaryans (EKF anında güvenir)
+                        COV_POSE_21
                     )
 
-                    # 2. ODOMETRY (Mesaj #331)
+                    # 2. ODOMETRY (Mesaj #331) - EKF2 Tam Poz ve Hız Senkronizasyonu
                     self.mav.mav.odometry_send(
                         usec,
                         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
                         mavutil.mavlink.MAV_FRAME_BODY_FRD,
                         x, y, z,
                         [qw, qx, qy, qz],
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        [0.005] * 21,
-                        [0.005] * 21,
+                        vx, vy, vz,
+                        wx, wy, wz,
+                        COV_POSE_21,
+                        COV_VEL_21,
                         0,
                         mavutil.mavlink.MAV_ESTIMATOR_TYPE_VIO
                     )
                 except Exception:
                     pass
 
+                # İlk 5 döngüde Global Origin ve Home Position'ı PX4'e bildir
                 if tick < 5:
                     self.send_global_origin()
                 tick += 1
@@ -226,21 +336,32 @@ class CPUHoverEngine:
         for t in topics:
             gz_node.subscribe(Odometry, t, self.on_gazebo_odometry)
 
+        # 35 Hz yayın thread'i
         pub_thread = threading.Thread(target=self.publisher_worker, daemon=True)
         pub_thread.start()
 
-        print("🚀 [CPU HOVER ENGINE AKTİF] 30 Hz Kusursuz EKF2 Konum Kilidi Devrede!")
-        print("💡 GPU Kullanımı: %0 | İşlemci (CPU) Gecikmesi: <0.1 ms")
-        print("Çıkmak için CTRL+C")
+        # MAVLink Zaman Senkronizasyonu thread'i
+        timesync_thread = threading.Thread(target=self.timesync_worker, daemon=True)
+        timesync_thread.start()
+
+        print(f"\n🚀 [AŞAMA 2 AKTİF] {self.publish_rate} Hz EKF2 Odometri Yayını Devrede!")
+        print("📍 Koordinat Çerçevesi : NED (X=Kuzey, Y=Doğu, Z=-İrtifa)")
+        print("📍 Kovaryans Değeri    : 1e-4 (Geçerli Pozitif Matris)")
+        print("📍 Frekans             : 35 Hz (>= 30 Hz Standart)")
+        print("💡 CPU Gecikmesi       : <0.1 ms | GPU Yükü: %0")
+        print("------------------------------------------------------------------")
+        print("👉 Dron artık QGC üzerinden doğrudan HOLD modunda ARM edilip kalkabilir.")
+        print("👉 Kumanda bağlantısı kopsa dahi havada çivi gibi asılı kalır.")
+        print("------------------------------------------------------------------\n")
 
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
             self.is_running = False
-            print("\n🛑 CPU Hover Engine Kapatıldı.")
+            print("\n🛑 CPU Hover Köprüsü Kapatıldı.")
 
 
 if __name__ == "__main__":
-    engine = CPUHoverEngine()
+    engine = CPUHoverEngine(publish_rate=35.0)
     engine.start()

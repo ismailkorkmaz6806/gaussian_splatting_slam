@@ -169,7 +169,9 @@ class PX4VisionBridge:
         self.send_nsh_command("param set SYS_FAILURE_EN 1")
         self.send_nsh_command("failure gps off")
         self.send_nsh_command("param set EKF2_GPS_CTRL 0")
-        self.send_nsh_command("param set EKF2_EV_CTRL 15")
+        self.send_nsh_command("param set EKF2_EV_CTRL 11")
+        self.send_nsh_command("param set EKF2_HGT_REF 3")
+        self.send_nsh_command("param set EKF2_MAG_TYPE 4")
         self.send_nsh_command("param set NAV_RCL_ACT 0")
         self.send_nsh_command("param set NAV_DLL_ACT 0")
         
@@ -178,9 +180,15 @@ class PX4VisionBridge:
         self.send_nsh_command("param set COM_ARM_MAG_STR 0")  # Pusula gücü kontrolünü kapat
         self.send_nsh_command("param set COM_ARM_MAG_ANG -1") # Pusula açısı kontrolünü kapat
         self.send_nsh_command("param set EKF2_MAG_CHECK 0")   # Sensör uyuşmazlığı hatasını yoksay
+        self.send_nsh_command("param set EKF2_GPS_CHECK 0")
         
-        self.send_nsh_command("param set COM_RC_IN_MODE 3")
+        self.send_nsh_command("param set COM_RC_IN_MODE 1")
         self.send_nsh_command("param set COM_RCL_EX_T 10")
+        self.send_nsh_command("param set CBRK_IO_SAFETY 22027")
+        self.send_nsh_command("param set CBRK_USB_CHK 197848")
+        self.send_nsh_command("param set CBRK_SUPPLY_CHK 894281")
+        self.send_nsh_command("param set COM_ARM_MIS_REQ 0")
+        self.send_nsh_command("param set COM_ARM_CHK_ESCS 0")
         print(" ⚙️  [PX4] Lidar Odometri Kurulumu ve ARM İzinleri Tamamlandı.")
 
     def set_gps_enabled(self, enable: bool):
