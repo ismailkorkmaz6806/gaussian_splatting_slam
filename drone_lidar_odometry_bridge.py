@@ -308,7 +308,7 @@ class LidarOdometryPX4Bridge:
             ("EKF2_HGT_REF", 3, True),       # Vision İrtifa Referansı
             ("EKF2_MAG_TYPE", 5, True),      # Vizyon/Lidar Yaw Referansı
             ("EKF2_MAG_CHECK", 0, True),
-            ("NAV_RCL_ACT", 0, True),        # Kumanda kopsa bile failsafe/iniş yapma! Pozisyonu kilitle, çivi gibi kal!
+            ("NAV_RCL_ACT", 7, True),        # Kumanda koptuğunda Position/Hold modunda çivi gibi kilitlen!
             ("COM_RC_LOSS_T", 0.3, False),   # Kumanda USB'den çekildiğinde hemen tepki ver
             ("COM_RCL_EXCEPT", 31, True),    # Tüm modlarda kumanda zorunluluğunu kaldır
             ("NAV_DLL_ACT", 0, True),
