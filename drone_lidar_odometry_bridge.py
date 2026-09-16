@@ -34,6 +34,7 @@ if "/usr/lib/python3/dist-packages" not in sys.path:
 try:
     from gz.transport13 import Node
     from gz.msgs10.pointcloud_packed_pb2 import PointCloudPacked
+    from gz.msgs10.laserscan_pb2 import LaserScan
     from gz.msgs10.odometry_pb2 import Odometry
 except Exception as e:
     print(f"❌ Gazebo Transport kütüphanesi yüklenemedi: {e}")
@@ -290,7 +291,7 @@ class LidarOdometryPX4Bridge:
         print("⚙️  [AŞAMA 1] PX4 Parametreleri GPS-Denied Lidar & Odometri Moduna Yapılandırılıyor...")
         params = [
             ("SIM_GZ_EN_GPS", 0, True),
-            ("SYS_FAILURE_EN", 1, True),
+            ("SYS_FAILURE_EN", 0, True),
             ("EKF2_GPS_CTRL", 0, True),
             ("EKF2_GPS_CHECK", 0, True),
             ("EKF2_EV_CTRL", 15, True),      # Bitmask: Horiz Pos, Vert Pos, 3D Vel, Yaw
@@ -317,7 +318,7 @@ class LidarOdometryPX4Bridge:
             self.set_param(name, val, is_int)
             time.sleep(0.015)
 
-        self.send_nsh("failure gps off")
+        self.send_nsh("failure gps ok")
         self.send_nsh("param save")
         print("✅ [AŞAMA 1] PX4 Parametreleri Başarıyla Uygulandı!")
 
@@ -343,35 +344,21 @@ class LidarOdometryPX4Bridge:
         except Exception:
             pass
 
-    def on_forward_lidar(self, msg: PointCloudPacked):
-        """
-        Gazebo GPU Lidarından (/forward_lidar) gelen 3B nokta bulutunu işler.
-        ICP ile hareket kestirimi (Lidar Odometri) üretir.
-        """
+    def process_xyz(self, xyz):
+        """Her iki lidar formatından (PointCloud ve LaserScan) gelen 3B noktaları ICP ile işler."""
         t_now = time.time()
         try:
-            # 1. Binary veriden float32 (x, y, z) noktalarını ayıkla
-            point_step = msg.point_step
-            if point_step < 12:
-                return
-            n_points = len(msg.data) // point_step
-            if n_points < 100:
-                return
-
-            raw_arr = np.frombuffer(msg.data, dtype=np.float32)
-            stride_floats = point_step // 4
-            xyz = raw_arr.reshape(-1, stride_floats)[:, :3]
-
-            # 2. Noktaları filtrele ve seyrelt
             pts_tensor = self.icp.preprocess(xyz)
             if pts_tensor is None:
                 return
 
-            # 3. İlk tarama: Referans anahtar kareyi başlat
             if self.ref_keyframe_pts is None:
                 self.ref_keyframe_pts = pts_tensor
                 self.prev_scan_pts = pts_tensor
                 self.last_lidar_time = t_now
+                # Başlangıç koordinatlarını mevcut yerel pozisyona senkronize et
+                with self.lock:
+                    self.world_t = np.array([self.current_pos_ned[0], -self.current_pos_ned[1], -self.current_pos_ned[2]], dtype=np.float64)
                 print(f"🎯 [LIDAR ODOMETRİ] İlk Referans Kare Alındı: {len(pts_tensor)} nokta. Takip Başladı!")
                 return
 
@@ -380,36 +367,25 @@ class LidarOdometryPX4Bridge:
                 dt = 0.05
             self.last_lidar_time = t_now
 
-            # 4. Hızlı ICP Eşleştirme (Mevcut tarama -> Referans kare)
             R_delta, t_delta, converged = self.icp.align(pts_tensor, self.prev_scan_pts)
 
-            # Ters dönüşüm: Lidar gövdesinin dünyaya göre hareketi
-            # Lidar eksenleri: X: İleri, Y: Sol, Z: Yukarı
-            # Dron gövdesi FRD (İleri, Sağ, Aşağı) ve Dünya NED dönüşümü
             delta_dist = np.linalg.norm(t_delta)
-            if delta_dist > 1.5:  # Fiziksel olarak imkansız 100ms'lik sıçramaları filtrele
+            if delta_dist > 1.5:  # Fiziksel sıçramaları filtrele
                 t_delta = np.zeros(3)
                 R_delta = np.eye(3)
 
-            # Kümülatif konumu güncelle (ICP t_delta: mevcut taramayı referansa eşleyen hareket)
+            # Kümülatif konumu güncelle
             self.world_t += self.world_R @ t_delta
             self.world_R = R_delta @ self.world_R
 
-            # Lidar ekseninden NED çerçevesine dönüşüm:
-            # X_ned = X_lidar (İleri)
-            # Y_ned = -Y_lidar (Sağ)
-            # Z_ned = -Z_lidar (Aşağı)
             x_ned = float(self.world_t[0])
             y_ned = -float(self.world_t[1])
             z_ned = -float(self.world_t[2])
 
-            # Rotasyon matrisinden Euler ve Kuaterniyon
             q_lidar = rot_matrix_to_quat(self.world_R)
-            # FRD kuaterniyonuna çevir
             qw, qx, qy, qz = q_lidar[0], q_lidar[1], -q_lidar[2], -q_lidar[3]
             roll, pitch, yaw = quat_to_euler([qw, qx, qy, qz])
 
-            # Hız hesaplama
             with self.lock:
                 vx = (x_ned - self.current_pos_ned[0]) / dt
                 vy = (y_ned - self.current_pos_ned[1]) / dt
@@ -431,8 +407,41 @@ class LidarOdometryPX4Bridge:
             self.lidar_frame_count += 1
             if self.lidar_frame_count % 30 == 0:
                 print(f"📡 [LIDAR ODOMETRİ AKTİF] X: {x_ned:+.2f}m | Y: {y_ned:+.2f}m | Z: {z_ned:+.2f}m | Hız: ({vx:.2f}, {vy:.2f}, {vz:.2f}) m/s")
+        except Exception:
+            pass
 
-        except Exception as e:
+    def on_forward_lidar(self, msg: PointCloudPacked):
+        """Gazebo GPU Lidarından gelen PointCloudPacked mesajını işler."""
+        try:
+            point_step = msg.point_step
+            if point_step < 12:
+                return
+            n_points = len(msg.data) // point_step
+            if n_points < 50:
+                return
+            raw_arr = np.frombuffer(msg.data, dtype=np.float32)
+            stride_floats = point_step // 4
+            xyz = raw_arr.reshape(-1, stride_floats)[:, :3]
+            self.process_xyz(xyz)
+        except Exception:
+            pass
+
+    def on_laser_scan(self, msg: LaserScan):
+        """Gazebo GPU Lidarından gelen LaserScan mesajını 3B noktalara dönüştürüp işler."""
+        try:
+            if msg.count == 0 or msg.vertical_count == 0 or len(msg.ranges) == 0:
+                return
+            ranges = np.array(msg.ranges, dtype=np.float32).reshape(msg.vertical_count, msg.count)
+            h_angles = msg.angle_min + np.arange(msg.count) * msg.angle_step
+            v_angles = msg.vertical_angle_min + np.arange(msg.vertical_count) * msg.vertical_angle_step
+            V, H = np.meshgrid(v_angles, h_angles, indexing='ij')
+
+            x = ranges * np.cos(V) * np.cos(H)
+            y = ranges * np.cos(V) * np.sin(H)
+            z = ranges * np.sin(V)
+            xyz = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
+            self.process_xyz(xyz)
+        except Exception:
             pass
 
     def on_gazebo_odometry(self, msg: Odometry):
@@ -469,7 +478,7 @@ class LidarOdometryPX4Bridge:
             self.sim_pos_ned = [rel_x, rel_y, rel_z]
             self.sim_quat_ned = [q_FRD_to_NED[0], q_FRD_to_NED[1], q_FRD_to_NED[2], q_FRD_to_NED[3]]
 
-            if self.mode == 'sim':
+            if self.mode == 'sim' or self.ref_keyframe_pts is None:
                 with self.lock:
                     self.current_pos_ned = [rel_x, rel_y, rel_z]
                     self.current_euler_ned = [roll, pitch, yaw]
@@ -553,16 +562,27 @@ class LidarOdometryPX4Bridge:
 
         gz_node = Node()
 
-        # 1. Gazebo GPU Lidar Konusuna Abone Ol
-        lidar_topics = [
+        # 1. Gazebo GPU Lidar Konularına Abone Ol (Hem PointCloud hem LaserScan formatlarını destekle)
+        pointcloud_topics = [
+            "/forward_lidar/points",
             "/forward_lidar",
             "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points",
             "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/model/x500_vision_0/forward_lidar/points",
+            "/model/x500_vision/forward_lidar/points",
+        ]
+        for pct in pointcloud_topics:
+            gz_node.subscribe(PointCloudPacked, pct, self.on_forward_lidar)
+
+        laserscan_topics = [
+            "/forward_lidar",
+            "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan",
+            "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan",
             "/model/x500_vision_0/forward_lidar",
             "/model/x500_vision/forward_lidar",
         ]
-        for lt in lidar_topics:
-            gz_node.subscribe(PointCloudPacked, lt, self.on_forward_lidar)
+        for lst in laserscan_topics:
+            gz_node.subscribe(LaserScan, lst, self.on_laser_scan)
 
         # 2. Gazebo Odometri Konusuna Abone Ol (Ground-Truth & Karşılaştırma)
         sim_topics = [
