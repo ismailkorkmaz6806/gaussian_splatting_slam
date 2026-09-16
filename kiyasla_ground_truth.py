@@ -77,9 +77,18 @@ def main():
     interp_gt_y = np.interp(t_eval, t_gt, gt_y)
     interp_gt_z = np.interp(t_eval, t_gt, gt_z)
 
-    err_x = (eval_vo_x - interp_gt_x) * 100.0  # cm
-    err_y = (eval_vo_y - interp_gt_y) * 100.0  # cm
-    err_z = (eval_vo_z - interp_gt_z) * 100.0  # cm
+    # Başlangıç orijinini sıfırla (Dronun doğduğu yeri (0,0,0) kabul ederek göreceli uçuş takibini ölç)
+    rel_gt_x = interp_gt_x - interp_gt_x[0]
+    rel_gt_y = interp_gt_y - interp_gt_y[0]
+    rel_gt_z = interp_gt_z - interp_gt_z[0]
+
+    rel_vo_x = eval_vo_x - eval_vo_x[0]
+    rel_vo_y = eval_vo_y - eval_vo_y[0]
+    rel_vo_z = eval_vo_z - eval_vo_z[0]
+
+    err_x = (rel_vo_x - rel_gt_x) * 100.0  # cm
+    err_y = (rel_vo_y - rel_gt_y) * 100.0  # cm
+    err_z = (rel_vo_z - rel_gt_z) * 100.0  # cm
     err_3d = np.sqrt(err_x**2 + err_y**2 + err_z**2)
 
     print("\n🎯 [DOĞRULUK VE HATA ANALİZİ]")

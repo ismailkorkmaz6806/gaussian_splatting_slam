@@ -157,18 +157,18 @@
       <sensor name='forward_lidar' type='gpu_lidar'>
         <gz_frame_id>forward_lidar_link</gz_frame_id>
         <pose>0 0 0.02 0 0 0</pose>
-        <update_rate>15</update_rate>
+        <update_rate>10</update_rate>
         <topic>/forward_lidar</topic>
         <ray>
           <scan>
             <horizontal>
-              <samples>180</samples>
+              <samples>120</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265</min_angle>
               <max_angle>3.14159265</max_angle>
             </horizontal>
             <vertical>
-              <samples>16</samples>
+              <samples>8</samples>
               <resolution>1</resolution>
               <min_angle>-0.2618</min_angle>
               <max_angle>0.2618</max_angle>

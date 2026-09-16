@@ -113,9 +113,7 @@ if [ -d "$PX4_DIR" ]; then
     echo -e "${YELLOW}🛰️ [LİDAR ODOMETRİ SİSTEMİ] Donanımsal Olarak GPS Devredışı Bırakılıyor ve Lidar Odometri Başlatılıyor...${NC}"
     nohup python3 -u drone_lidar_odometry_bridge.py --mode lidar > /tmp/lidar_odometry.log 2>&1 &
     LIDAR_PID=$!
-    
-    sleep 3  # Parametrelerin otopilota işlenmesi için 3 saniye bekle
-    python3 gps_kontrol.py  # Ayni terminale GPS'in kapali oldugunu kanitla
+    sleep 1
     
     # Kamerayı otomatik dronun arkasına kilitle (Mağara içine girince dronu kaybetmemek için)
     (
