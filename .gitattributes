@@ -1,0 +1,5 @@
+# GitHub Linguist Dil İstatistiği Yapılandırması
+# Üretilen 14MB'lık interaktif 3B Three.js HTML modellerini ve raporları istatistikten hariç tut
+*.html linguist-detectable=false
+*.html linguist-generated=true
+*.sdf linguist-detectable=false
