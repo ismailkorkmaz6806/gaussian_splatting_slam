@@ -335,12 +335,12 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
             pts_l_gl[:, 1] -= l_ground
 
             n_l = len(pts_l_gl)
-            # Boşluksuz katı kaya yüzeyi için adaptif splat ölçekleri (0.050m dolgun elipsoit)
-            base_r = np.full(n_l, 0.050, dtype=np.float32)
-            scales_l = np.column_stack([base_r, base_r * 0.85, base_r * 0.60]).astype(np.float32)
+            # Boşluksuz yekpare kaya yüzeyi için optimize edilmiş dolgun elipsoit ölçekleri
+            base_r = np.full(n_l, 0.065, dtype=np.float32)
+            scales_l = np.column_stack([base_r, base_r * 0.90, base_r * 0.70]).astype(np.float32)
             quats_l = np.zeros((n_l, 4), dtype=np.float32)
             quats_l[:, 0] = 1.0
-            opac_l = np.full(n_l, 0.96, dtype=np.float32)
+            opac_l = np.full(n_l, 0.98, dtype=np.float32)
 
             # LiDAR gerçek uçuş yörüngesini al
             if traj_data is not None and len(traj_data) > 0:

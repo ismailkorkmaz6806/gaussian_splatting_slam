@@ -522,8 +522,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                     if accumulated_lidar_pts:
                         all_lp = np.vstack(accumulated_lidar_pts)
                         all_lr = np.vstack(accumulated_lidar_rgb)
-                        # Voksel seyreltme (2.5 cm ızgara çözünürlüğü - yüksek yoğunluk, sıfır boşluk)
-                        grid = np.floor(all_lp / 0.025).astype(np.int32)
+                        # Voksel seyreltme (1.8 cm ızgara çözünürlüğü - ultra yoğun, boşluksuz katı kaya)
+                        grid = np.floor(all_lp / 0.018).astype(np.int32)
                         _, uidx = np.unique(grid, axis=0, return_index=True)
                         lp_ds = all_lp[uidx]
                         lr_ds = all_lr[uidx]
