@@ -244,11 +244,9 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
         rgb = frames[idx]['rgb_np']          # Orijinal renk bilgisi
         T_w = cam_poses[idx]                 # Kameranın Dünya koordinatlarındaki matrisi
 
-        # Gürültü ve uçuşan noktaları temizleme filtresi (Mağara için daha geniş kabul)
+        # Gürültü ve uçuşan noktaları temizleme filtresi (Kristal netlik ve sıfır gürültü)
         dist = np.linalg.norm(pts_loc, axis=-1)
-        conf_thresh = 1.10 if is_cave else 1.45
-        max_dist = 7.5 if is_cave else 4.8
-        valid = (conf > conf_thresh) & (dist < max_dist) & (pts_loc[..., 2] > 0.10) & np.isfinite(pts_loc).all(axis=-1)
+        valid = (conf > 1.45) & (dist < 5.0) & (pts_loc[..., 2] > 0.15) & np.isfinite(pts_loc).all(axis=-1)
 
         pts_valid = pts_loc[valid]
         rgb_valid = rgb[valid]
@@ -261,16 +259,11 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
         pts_w = (T_w[:3, :3] @ pts_valid.T).T + T_w[:3, 3]
         pts_w[:, 1] = -pts_w[:, 1]  # OpenGL koordinat standart eşitlemesi (+Y yukarı)
 
-        # 3D Gaussian Splatting Ölçekleri (Mağara için dolgun, ofis için keskin)
+        # 3D Gaussian Splatting Ölçekleri (Net, keskin ve yüksek çözünürlüklü)
         depths = pts_valid[:, 2]
-        if is_cave:
-            base_radius = np.clip(0.016 * depths, 0.012, 0.055).astype(np.float32)
-            scales = np.column_stack([base_radius, base_radius * 0.85, base_radius * 0.60])
-            opacities = np.clip((conf_valid - 1.10) / 2.0 + 0.70, 0.6, 0.99).astype(np.float32)
-        else:
-            base_radius = np.clip(0.008 * depths, 0.003, 0.035).astype(np.float32)
-            scales = np.column_stack([base_radius, base_radius * 0.7, base_radius * 0.4])
-            opacities = np.clip((conf_valid - 1.45) / 2.0 + 0.65, 0.5, 0.98).astype(np.float32)
+        base_radius = np.clip(0.008 * depths, 0.003, 0.035).astype(np.float32)
+        scales = np.column_stack([base_radius, base_radius * 0.7, base_radius * 0.4])
+        opacities = np.clip((conf_valid - 1.45) / 2.0 + 0.65, 0.5, 0.98).astype(np.float32)
 
         # Dönüş Kuaterniyonu (rot_0, rot_1, rot_2, rot_3) - Varsayılan kimlik yönü [1, 0, 0, 0]
         quats = np.zeros((len(pts_valid), 4), dtype=np.float32)

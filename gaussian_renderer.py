@@ -455,26 +455,17 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         "💎 YÜKSEK KALİTE (90+ FPS, ~3.0M Splat)",
         "👑 TAM ÇÖZÜNÜRLÜK (6.0M Splat)"
     ]
-    # Sahne türüne göre dinamik dolgunluk ve kalite modu:
-    # 500k-1.5M noktalı mağara/tünel sahneleri seyreltmeye uğramamalı ve daha dolgun splatlarla kapatılmalıdır
-    is_cave_or_sparse = (len(raw_xyz) < 2_000_000) or ("drone" in ply_path.lower()) or ("cave" in ply_path.lower())
-
-    if is_cave_or_sparse:
-        quality_idx = 4  # TAM ÇÖZÜNÜRLÜK (stride=1, sıfır seyreltme)
-        cur_stride = quality_strides[quality_idx]
-        splat_point_size = 24.0  # Boşluksuz katı kaya duvarı
-    else:
-        quality_idx = 3  # YÜKSEK KALİTE (~3.0M nokta, 90+ FPS)
-        cur_stride = quality_strides[quality_idx]
-        splat_point_size = 11.0 if cur_stride == 2 else 8.5
+    # ✅ Orijinal dengeli ve kristal netliğinde görüntü modu (Fotoğraftaki keskin netlik)
+    quality_idx = 2
+    cur_stride = quality_strides[quality_idx]
 
     xyz = np.ascontiguousarray(raw_xyz[::cur_stride], dtype=np.float32)
     rgb = np.ascontiguousarray(raw_rgb[::cur_stride], dtype=np.float32)
     num_splats = len(xyz)
     room_bounds = FloorplanEstimator.calculate_bounds(xyz)
 
-    # Splat nokta boyutu varsayılanı (Yüksek detaylı, keskin ve fotogerçekçi görünüm)
-    splat_point_size = 11.0 if cur_stride == 2 else (8.5 if cur_stride <= 1 else (15.0 if cur_stride == 3 else 20.0))
+    # Splat nokta boyutu varsayılanı (Boşluk kalmaması ve piksellerin bulanıklaşmaması için orijinal keskin boyut)
+    splat_point_size = 5.4 if cur_stride == 5 else (4.8 if cur_stride == 4 else (4.3 if cur_stride == 3 else (3.8 if cur_stride == 2 else 3.2)))
 
     # Modül Yöneticilerini Başlat
     culler = CeilingCuller()
@@ -579,7 +570,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_gs_size, tex_gs_size, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex_gs_data)
     glBindTexture(GL_TEXTURE_2D, 0)
 
-    use_gaussian_splat = True   # True: Yumuşak 3DGS Splat + Mesafe Uyarlamalı, False: Nokta Bulutu
+    use_gaussian_splat = False  # False: Kristal netlikte keskin nokta modu (Varsayılan), True: [N] ile yumuşak splat
 
     # GPU VBO (Vertex Buffer Object) Bellek Tahsisleri
     vbo_xyz = glGenBuffers(1)
@@ -607,17 +598,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         room_bounds = FloorplanEstimator.calculate_bounds(xyz)
         culler.init_from_bounds(xyz)
 
-        if is_cave_or_sparse:
-            splat_point_size = 30.0 if st >= 3 else (26.0 if st == 2 else 24.0)
-        else:
-            if st >= 4:
-                splat_point_size = 20.0
-            elif st == 3:
-                splat_point_size = 16.0
-            elif st == 2:
-                splat_point_size = 12.0
-            else:
-                splat_point_size = 8.5
+        splat_point_size = 5.4 if st == 5 else (4.8 if st == 4 else (4.3 if st == 3 else (3.8 if st == 2 else 3.2)))
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_xyz)
         glBufferData(GL_ARRAY_BUFFER, xyz.nbytes, xyz, GL_STATIC_DRAW)
@@ -1238,18 +1219,16 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
             # 🔮 3D Gaussian Splats Çizimi (Yumuşak Gaussian Splat & Mesafe Uyarlamalı)
             zoom_scale = 60.0 / max(cam_fov, 15.0)
             
-            # KASMAYI ÖNLEME: GPU Fill-rate darboğazını önlemek ve aşırı büyümeyi sınırlamak için max boyut
-            max_allowed_size = 56.0 if is_cave_or_sparse else 34.0
+            # KASMAYI ÖNLEME: Aşırı büyümeyi sınırlayıp netliği koruyan tavan
+            max_allowed_size = 30.0
             effective_point_size = max(1.0, min(max_allowed_size, splat_point_size * zoom_scale))
             glPointSize(effective_point_size)
 
             if use_gaussian_splat:
-                # 3B Mesafe Azaltımı: Yaklaştıkça ve uzaktan bakıldığında boşlukları kapatır
-                min_pt_size = 3.5 if is_cave_or_sparse else 1.2
-                atten_c = 0.15 if is_cave_or_sparse else 0.30
-                atten_arr = (GLfloat * 3)(0.15, 0.0, atten_c)
+                # 3B Mesafe Azaltımı: Kristal netlikte ince Gaussian elipsoitler
+                atten_arr = (GLfloat * 3)(0.20, 0.0, 0.30)
                 glPointParameterfv(GL_POINT_DISTANCE_ATTENUATION, atten_arr)
-                glPointParameterf(GL_POINT_SIZE_MIN, min_pt_size)
+                glPointParameterf(GL_POINT_SIZE_MIN, 1.2)
                 glPointParameterf(GL_POINT_SIZE_MAX, max_allowed_size)
 
                 # Gaussian Point Sprite: Noktaları sert kareler yerine yumuşak dairesel splat olarak çiz
