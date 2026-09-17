@@ -257,10 +257,10 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
         pts_w = (T_w[:3, :3] @ pts_valid.T).T + T_w[:3, 3]
         pts_w[:, 1] = -pts_w[:, 1]  # OpenGL koordinat standart eşitlemesi (+Y yukarı)
 
-        # 3D Gaussian Splatting Ölçekleri (Derinliğe göre adaptif anizotropik elipsoit boyutları - boşluksuz dolgun yapı)
+        # 3D Gaussian Splatting Ölçekleri (Derinliğe göre adaptif anizotropik elipsoit boyutları)
         depths = pts_valid[:, 2]
-        base_radius = np.clip(0.016 * depths, 0.012, 0.055).astype(np.float32)
-        scales = np.column_stack([base_radius, base_radius * 0.85, base_radius * 0.60])
+        base_radius = np.clip(0.008 * depths, 0.003, 0.035).astype(np.float32)
+        scales = np.column_stack([base_radius, base_radius * 0.7, base_radius * 0.4])
 
         # Dönüş Kuaterniyonu (rot_0, rot_1, rot_2, rot_3) - Varsayılan kimlik yönü [1, 0, 0, 0]
         quats = np.zeros((len(pts_valid), 4), dtype=np.float32)
@@ -309,8 +309,16 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     # =========================================================================
     # [ADIM 3.5] 📡 Katı Hal (Solid-State) 3B LiDAR Noktalarının Birleştirilmesi
     # =========================================================================
-    lidar_npz = lidar_file if (lidar_file and os.path.exists(lidar_file)) else os.path.join(CURR_DIR, "temp_lidar_pts.npz")
-    if os.path.exists(lidar_npz):
+    # Sadece mağara/dron modellerinde veya özel olarak lidar_file verilmişse birleştir
+    lidar_npz = None
+    if lidar_file and os.path.exists(lidar_file):
+        lidar_npz = lidar_file
+    elif "drone" in output_ply.lower() or "cave" in video_file.lower() or "tunel" in video_file.lower():
+        cand = os.path.join(CURR_DIR, "temp_lidar_pts.npz")
+        if os.path.exists(cand):
+            lidar_npz = cand
+
+    if lidar_npz is not None and os.path.exists(lidar_npz):
         try:
             print(f"\n [3.5] 📡 Katı Hal 3B LiDAR Verisi Yükleniyor: {os.path.basename(lidar_npz)}...")
             ld = np.load(lidar_npz, allow_pickle=True)
@@ -459,6 +467,6 @@ end_header
 # Doğrudan terminalden çalıştırıldığında (Örn: python mast3r_to_3dgs.py testvideo2.mp4 50)
 if __name__ == "__main__":
     v_name = sys.argv[1] if len(sys.argv) > 1 else "ofisvideo.mp4"
-    n_kf = int(sys.argv[2]) if len(sys.argv) > 2 else 35
+    n_kf = int(sys.argv[2]) if len(sys.argv) > 2 else 50
     out_name = sys.argv[3] if len(sys.argv) > 3 else "gaussian_scene.ply"
     build_gaussian_splats_from_mast3r(v_name, output_ply=out_name, num_keyframes=n_kf)
