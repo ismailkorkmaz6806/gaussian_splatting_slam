@@ -79,7 +79,7 @@ fi
 
 if [ "$WORLD_CHOICE" == "1" ]; then
     SECILEN_DUNYA="benim_magaram"
-    DUNYA_POSE="4.0,0.0,1.5,0,0,0"
+    DUNYA_POSE="4.0,0.0,0.20,0,0,0"
     DUNYA_BASLIK="Temiz Doğal Kaya Tüneli (Tam Mağaranın İçi Başlangıç)"
 else
     SECILEN_DUNYA="buyuk_ev"
@@ -93,6 +93,7 @@ if [ -d "$PX4_DIR" ]; then
     export DISPLAY="${DISPLAY:-:0}"
     # Güncel dünyaları PX4 dizinine senkronize et
     cp -f "$SCRIPT_DIR/gazebo_cave_world/worlds/buyuk_ev.sdf" "$PX4_DIR/Tools/simulation/gz/worlds/buyuk_ev.sdf" 2>/dev/null || true
+    cp -f "$SCRIPT_DIR/benim_magaram.sdf" "$PX4_DIR/Tools/simulation/gz/worlds/benim_magaram.sdf" 2>/dev/null || true
     
     export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$SCRIPT_DIR/gazebo_cave_world/worlds:$PX4_DIR/Tools/simulation/gz/worlds/aws_small_house_world/models:$PX4_DIR/Tools/simulation/gz/models:$SCRIPT_DIR/gazebo_cave_world/worlds/models"
     export PX4_GZ_WORLD="$SECILEN_DUNYA"

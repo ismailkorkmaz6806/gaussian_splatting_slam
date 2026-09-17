@@ -588,7 +588,7 @@ class LidarOdometryPX4Bridge:
                 if tick < 3:
                     print(f"📡 [ODOM GÖNDERİLDİ] (#{tick}) NED({x:.2f}, {y:.2f}, {z:.2f})")
 
-                if tick < 100 or (tick % 35 == 0):
+                if tick < 10:
                     self.send_global_origin()
                 tick += 1
 
