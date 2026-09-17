@@ -50,14 +50,14 @@ def send_teleop_cmd(vx, vy, vz, wy, wz):
     pass
 
 
-def run_drone_capture(camera_source=0, target_keyframes=50):
+def run_drone_capture(camera_source=0, target_keyframes=20):
     """
     Canlı dron veya kamera akışını başlatır, kullanıcı taramayı bitirdiğinde
     otomatik olarak MASt3R yapay zekasını çalıştırıp 3B Gaussian Splatting modelini açar.
     
     Parametreler:
         camera_source    : Kamera indeksi (0, 1) veya RTSP URL'si ("rtsp://192.168.1.100:8554/stream")
-        target_keyframes : 3B harita çıkarılırken videodan seçilecek anahtar kare sayısı (Yüksek Detay: 50)
+        target_keyframes : 3B harita çıkarılırken videodan seçilecek anahtar kare sayısı (Hızlı ve Keskin: 20-25)
     """
     print("=" * 70)
     print(" 🚁 CANLI DRON / KAMERA 3B HARİTALAMA SİSTEMİ")
@@ -106,18 +106,9 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
         px4_bridge = None
 
         current_nose_pitch_deg = [0.0]
-        current_drone_pos = [np.array([-3.0, 0.0, 0.20], dtype=np.float32)]
-        current_drone_rot = [np.eye(3, dtype=np.float32)]
-        start_flight_pos = [None]
-        drone_trajectory = []
 
-        lidar_lock = threading.Lock()
-        accumulated_lidar_pts = []
-        accumulated_lidar_rgb = []
-        lidar_scan_count = [0]
         def _on_odom(msg):
             try:
-                pos = msg.pose.position
                 q = msg.pose.orientation
                 sinp = 2 * (q.w * q.y - q.z * q.x)
                 if abs(sinp) >= 1:
@@ -125,149 +116,19 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                 else:
                     p = math.asin(sinp)
                 current_nose_pitch_deg[0] = -math.degrees(p)
-
-                # YAW HESAPLAMA (Lidar Odometri Icin)
-                siny_cosp = 2 * (q.w * q.z + q.x * q.y)
-                cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
-                yaw_deg = math.degrees(math.atan2(siny_cosp, cosy_cosp))
-
-                # Dron anlık konumu
-                pos_arr = np.array([float(pos.x), float(pos.y), float(pos.z)], dtype=np.float32)
-                current_drone_pos[0] = pos_arr
-
-                # PX4 BRIDGE'E LİDAR KONUMUNU BAS (Hover Icin)
-                if px4_bridge:
-                    px4_bridge.update_slam_pose(x_cam=float(pos.y), y_cam=-float(pos.z), z_cam=float(pos.x), yaw_deg=yaw_deg)
-
-                qw, qx, qy, qz = float(q.w), float(q.x), float(q.y), float(q.z)
-                current_drone_rot[0] = np.array([
-                    [1.0 - 2.0*(qy*qy + qz*qz), 2.0*(qx*qy - qz*qw), 2.0*(qx*qz + qy*qw)],
-                    [2.0*(qx*qy + qz*qw), 1.0 - 2.0*(qx*qx + qz*qz), 2.0*(qy*qz - qx*qw)],
-                    [2.0*(qx*qz - qy*qw), 2.0*(qy*qz + qx*qw), 1.0 - 2.0*(qx*qx + qy*qy)]
-                ], dtype=np.float32)
-
-                if recording:
-                    if start_flight_pos[0] is None:
-                        start_flight_pos[0] = pos_arr.copy()
-                    drone_trajectory.append(pos_arr.copy())
-            except Exception as e:
-                pass
-
-        def _on_lidar(msg):
-            try:
-                offsets = {}
-                for f in msg.field:
-                    if f.name in ('x', 'y', 'z'):
-                        offsets[f.name] = f.offset
-                if len(offsets) < 3:
-                    return
-                step = msg.point_step
-                n_pts = msg.width * msg.height
-                if len(msg.data) < n_pts * step or n_pts == 0:
-                    return
-
-                data_2d = np.frombuffer(msg.data, dtype=np.uint8)[:n_pts * step].reshape((n_pts, step))
-                x = data_2d[:, offsets['x']:offsets['x']+4].copy().view('<f4').ravel()
-                y = data_2d[:, offsets['y']:offsets['y']+4].copy().view('<f4').ravel()
-                z = data_2d[:, offsets['z']:offsets['z']+4].copy().view('<f4').ravel()
-                pts_s = np.column_stack([x, y, z])
-
-                # Menzil filtresi (0.25m - 30.0m) ve finite kontrolü
-                dists = np.linalg.norm(pts_s, axis=1)
-                valid = (dists > 0.25) & (dists < 30.0) & np.isfinite(pts_s).all(axis=1)
-                pts_s = pts_s[valid]
-                if len(pts_s) == 0:
-                    return
-
-                lidar_scan_count[0] += 1
-
-                if lidar_scan_count[0] == 1:
-                    print("\n 📡 [KATI HAL 3B LIDAR AKTİF]: Gazebo'dan 3B Nokta Bulutu Verisi Akıyor!")
-
-                # Montaj açısı: burun hafif aşağı (pitch = 0.08 rad), T_mount = [0.15, 0.0, 0.18]
-                cp, sp = 0.9968, 0.0799
-                xb = 0.15 + pts_s[:, 0] * cp + pts_s[:, 2] * sp
-                yb = pts_s[:, 1]
-                zb = 0.18 - pts_s[:, 0] * sp + pts_s[:, 2] * cp
-                pts_b = np.column_stack([xb, yb, zb])
-
-                R_b = current_drone_rot[0]
-                T_b = current_drone_pos[0]
-                if R_b is None or T_b is None:
-                    return
-
-                pts_w = (R_b @ pts_b.T).T + T_b
-
-                # Renk ataması (Kamera projeksiyonu veya gerçekçi kaya/zemin tonu)
-                with gz_lock:
-                    cam_img = latest_gz_frame[0]
-
-                # Kamera koordinatları (Kamera gövdede [0.12, 0.03, 0.242])
-                pc_x = xb - 0.12
-                pc_y = yb - 0.03
-                pc_z = zb - 0.242
-
-                # Kamera HFOV ~ 1.74 rad (f ~ 270 px)
-                u = (320.0 - 270.0 * (pc_y / np.maximum(pc_x, 0.01))).astype(np.int32)
-                v = (240.0 - 270.0 * (pc_z / np.maximum(pc_x, 0.01))).astype(np.int32)
-
-                in_cam = (pc_x > 0.2) & (u >= 0) & (u < 640) & (v >= 0) & (v < 480)
-                rgb = np.zeros((len(pts_w), 3), dtype=np.float32)
-
-                if cam_img is not None and np.any(in_cam):
-                    idx_cam = np.where(in_cam)[0]
-                    sampled = cam_img[v[idx_cam], u[idx_cam]][:, ::-1] / 255.0
-                    rgb[idx_cam] = sampled
-
-                out_cam = ~in_cam
-                if np.any(out_cam):
-                    idx_out = np.where(out_cam)[0]
-                    z_w = pts_w[idx_out, 2]
-                    is_floor = z_w < 0.25
-                    f_idx = idx_out[is_floor]
-                    w_idx = idx_out[~is_floor]
-                    if len(f_idx) > 0:
-                        rgb[f_idx] = np.array([0.45, 0.38, 0.32], dtype=np.float32) + np.random.uniform(-0.02, 0.02, (len(f_idx), 3))
-                    if len(w_idx) > 0:
-                        rgb[w_idx] = np.array([0.42, 0.40, 0.38], dtype=np.float32) + np.random.uniform(-0.03, 0.03, (len(w_idx), 3))
-
-                rgb = np.clip(rgb, 0.05, 0.95)
-
-                with lidar_lock:
-                    if recording:
-                        accumulated_lidar_pts.append(pts_w)
-                        accumulated_lidar_rgb.append(rgb)
             except Exception:
                 pass
 
         # Gazebo Kamera Konuları
         _gz_node.subscribe(GzImage, "/world/benim_magaram/model/x500_vision_0/link/camera_link/sensor/camera/image", _on_img)
-        _gz_node.subscribe(GzImage, "/world/benim_magaram/model/x500_vision/link/camera_link/sensor/camera/image", _on_img)
         _gz_node.subscribe(GzImage, "/world/buyuk_ev/model/x500_vision_0/link/camera_link/sensor/camera/image", _on_img)
-        _gz_node.subscribe(GzImage, "/world/buyuk_ev/model/x500_vision/link/camera_link/sensor/camera/image", _on_img)
-        _gz_node.subscribe(GzImage, "/world/tunnel_world/model/x500_vision_0/link/camera_link/sensor/camera/image", _on_img)
-        _gz_node.subscribe(GzImage, "/world/tunnel_world/model/x500_vision/link/camera_link/sensor/camera/image", _on_img)
         _gz_node.subscribe(GzImage, "/camera", _on_img)
-        _gz_node.subscribe(GzImage, "/camera/image", _on_img)
-        _gz_node.subscribe(GzImage, "/world/cave/model/x500_vision_0/link/camera_link/sensor/camera/image", _on_img)
 
-        # Gazebo Odometri Konuları
+        # Gazebo Odometri (Gimbal / Pitch açısı için)
         _gz_node.subscribe(Odometry, "/world/benim_magaram/model/x500_vision_0/odometry", _on_odom)
-        _gz_node.subscribe(Odometry, "/world/benim_magaram/model/x500_vision/odometry", _on_odom)
         _gz_node.subscribe(Odometry, "/world/buyuk_ev/model/x500_vision_0/odometry", _on_odom)
-        _gz_node.subscribe(Odometry, "/world/buyuk_ev/model/x500_vision/odometry", _on_odom)
-        _gz_node.subscribe(Odometry, "/world/tunnel_world/model/x500_vision_0/odometry", _on_odom)
-        _gz_node.subscribe(Odometry, "/world/tunnel_world/model/x500_vision/odometry", _on_odom)
-        _gz_node.subscribe(Odometry, "/model/x500_vision/odometry", _on_odom)
         _gz_node.subscribe(Odometry, "/model/x500_vision_0/odometry", _on_odom)
 
-        # Gazebo Katı Hal (Solid-State) 3B LiDAR Konuları
-        _gz_node.subscribe(PointCloudPacked, "/forward_lidar/points", _on_lidar)
-        _gz_node.subscribe(PointCloudPacked, "/forward_lidar/points/points", _on_lidar)
-        _gz_node.subscribe(PointCloudPacked, "/world/benim_magaram/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points", _on_lidar)
-        _gz_node.subscribe(PointCloudPacked, "/world/benim_magaram/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points", _on_lidar)
-        _gz_node.subscribe(PointCloudPacked, "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points", _on_lidar)
-        _gz_node.subscribe(PointCloudPacked, "/world/tunnel_world/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points", _on_lidar)
         print(" ⏳ Gazebo kamera akışı bekleniyor...")
         t_start = time.time()
         while time.time() - t_start < 45:
@@ -348,6 +209,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
     last_vel_send = time.time()
     last_cmd_time = 0.0
 
+    last_rec_frame_time = [0.0]
+
     while True:
         if is_gazebo_stream and HAS_GAZEBO_CONTROL:
             with gz_lock:
@@ -370,19 +233,19 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
         # TEMİZ VE FERAH KAMERA GÖRÜNTÜSÜ
         # ---------------------------------------------------------------------
         if recording:
-            recorded_frames.append(frame.copy())
-            with lidar_lock:
-                n_lp = sum(len(p) for p in accumulated_lidar_pts)
+            now_rec = time.time()
+            if now_rec - last_rec_frame_time[0] >= 0.10:  # 10 FPS ile dengeli ve hızlı kayıt
+                last_rec_frame_time[0] = now_rec
+                recorded_frames.append(frame.copy())
             # Kayıt durumunda üstte kırmızı canlı kayıt rozeti
             cv2.circle(display_frame, (20, 24), 8, (0, 0, 255), -1)
-            cv2.putText(display_frame, f"KAYIT: {len(recorded_frames)} Kare | {n_lp:,} Lidar Pts  [R / 3: Bitir & 3DGS Haritala]",
+            cv2.putText(display_frame, f"KAYIT: {len(recorded_frames)} Kare  [R / 3: Bitir & 3DGS Haritala]",
                         (36, 30), cv2.FONT_HERSHEY_DUPLEX, 0.52, (0, 0, 255), 1)
         else:
             # Normal durumda sol üstte sade durum bilgisi
             gps_st = "GPS: IPTAL" if gps_enabled_state[0] else "GPS: KAPALI (GPS-Denied)"
-            vio_st = "LIDAR ODOMETRY: AKTIF" if vio_enabled_state[0] else "LIDAR ODOMETRY: AKTIF"
-            lidar_st = f"3D LIDAR: AKTIF ({lidar_scan_count[0]} scan)" if lidar_scan_count[0] > 0 else "3D LIDAR: BEKLEMEDE"
-            cv2.putText(display_frame, f"CANLI KAMERA  |  {gps_st}  |  {vio_st}  |  {lidar_st}", 
+            vio_st = "LIDAR HOVER: AKTIF" if vio_enabled_state[0] else "LIDAR HOVER: BEKLEMEDE"
+            cv2.putText(display_frame, f"CANLI KAMERA (60 FPS)  |  {gps_st}  |  {vio_st}", 
                         (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 180), 1)
 
         # FPV Nişangah / Hedefleme Çaprazı (Merkezde hafif çizgi)
@@ -486,7 +349,7 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                 # 1. Basış: Taramayı başlat
                 recording = True
                 recorded_frames = []
-                print("\n 🔴 [TARAMA BAŞLADI] Dron/Kamera ilerliyor, kareler hafızaya alınıyor...")
+                print("\n 🔴 [TARAMA BAŞLADI] Dron kamerası kayıtta, kareler hafızaya alınıyor...")
             else:
                 # 2. Basış: Taramayı bitir ve anında 3B Harita Motorunu çalıştır!
                 recording = False
@@ -494,32 +357,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                 print(f"\n ⏹️ [TARAMA BİTTİ] Toplam {total_rec} kare alındı.")
                 send_teleop_cmd(0, 0, 0, 0, 0)
 
-                # Kaydedilen LiDAR noktalarını işle ve kaydet
-                temp_lidar_path = os.path.join(CURR_DIR, "temp_lidar_pts.npz")
-                has_lidar = False
-                with lidar_lock:
-                    if accumulated_lidar_pts:
-                        all_lp = np.vstack(accumulated_lidar_pts)
-                        all_lr = np.vstack(accumulated_lidar_rgb)
-                        # Voksel seyreltme (1.8 cm ızgara çözünürlüğü - ultra yoğun, boşluksuz katı kaya)
-                        grid = np.floor(all_lp / 0.018).astype(np.int32)
-                        _, uidx = np.unique(grid, axis=0, return_index=True)
-                        lp_ds = all_lp[uidx]
-                        lr_ds = all_lr[uidx]
-                        traj_arr = np.array(drone_trajectory, dtype=np.float32) if drone_trajectory else None
-                        sp = start_flight_pos[0] if start_flight_pos[0] is not None else np.array([-3.0, 0.0, 0.20], dtype=np.float32)
-                        np.savez_compressed(
-                            temp_lidar_path,
-                            pts=lp_ds,
-                            rgb=lr_ds,
-                            traj=traj_arr,
-                            start_pos=sp
-                        )
-                        has_lidar = True
-                        print(f" 📡 Katı Hal 3B LiDAR: {len(lp_ds):,} hassas metrik yüzey noktası kaydedildi!")
-
-                if total_rec < 15 and not has_lidar:
-                    print(" ⚠️ UYARI: Kayıt çok kısa oldu (<15 kare) ve LiDAR verisi bulunamadı. Biraz daha uzun tarama yapın.")
+                if total_rec < 10:
+                    print(" ⚠️ UYARI: Kayıt çok kısa oldu (<10 kare). Biraz daha uzun tarama yapın.")
                 else:
                     # Kaydedilen kareleri geçici bir MP4 videosuna dönüştür
                     temp_video_path = os.path.join(CURR_DIR, "temp_drone_scan.mp4")
@@ -536,17 +375,17 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                     cv2.destroyAllWindows()
 
                     print("\n" + "=" * 70)
-                    print(" ⚡ MASt3R & 3B LIDAR MOTORU ÇALIŞIYOR: 3D GAUSSIAN SPLAT HARİTASI ÜRETİLİYOR...")
+                    print(" ⚡ MASt3R KAMERA MOTORU ÇALIŞIYOR: 3D GAUSSIAN SPLAT HARİTASI ÜRETİLİYOR...")
                     print("=" * 70)
 
-                    # MASt3R & LiDAR motorunu çağırıp 3B Gaussian Splatting modelini üretiyoruz
+                    # MASt3R motorunu çağırıp kameradan 3B Gaussian Splatting modelini üretiyoruz
                     from mast3r_to_3dgs import build_gaussian_splats_from_mast3r
+                    kfs_to_use = min(target_keyframes, max(total_rec, 1))
                     out_ply = build_gaussian_splats_from_mast3r(
                         video_file=temp_video_path,
                         output_ply="drone_scene.ply",
-                        num_keyframes=min(target_keyframes, max(total_rec, 1)),
-                        target_size=512,
-                        lidar_file=temp_lidar_path if has_lidar else None
+                        num_keyframes=kfs_to_use,
+                        target_size=512
                     )
 
                     # Model üretilince 144+ FPS görüntüleyiciyi otomatik aç
@@ -570,5 +409,5 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
 if __name__ == "__main__":
     # Terminalden kamera numarası veya RTSP linki alabilir (varsayılan: gazebo)
     src = sys.argv[1] if len(sys.argv) > 1 else "gazebo"
-    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 35
+    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 20
     run_drone_capture(camera_source=src, target_keyframes=kfs)
