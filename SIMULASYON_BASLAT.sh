@@ -180,10 +180,9 @@ while true; do
     echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
     echo "  [4] 🚀 Dronu ARM ET (Motorları Başlat)"
     echo "  [5] 🛑 Dronu DISARM ET (Motorları Durdur / İndir)"
-    echo "  [6] 🤖 Tam Otonom Görev (Kalkış, Devriye, Geri Dönüş, İniş)"
     echo "  [0] ❌ Simülasyonu Kapat ve Çık"
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    read -p "Seçiminiz [0-6]: " CMD_SECIM
+    read -p "Seçiminiz [0-5]: " CMD_SECIM
 
     case $CMD_SECIM in
         1)
@@ -207,10 +206,6 @@ while true; do
         5)
             echo -e "${YELLOW}🛑 Dron DISARM Ediliyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.disarm()" 2>/dev/null || true
-            ;;
-        6)
-            echo -e "${GREEN}🤖 Tam Otonom Görev Başlatılıyor...${NC}"
-            python3 "$SCRIPT_DIR/otonom_gorev.py"
             ;;
         0|"q"|"Q")
             echo -e "${YELLOW}Simülasyon sonlandırılıyor...${NC}"
