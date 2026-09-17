@@ -245,9 +245,14 @@ class LidarOdometryPX4Bridge:
         self.last_lidar_time = None
         self.world_R = np.eye(3, dtype=np.float64)   # Dünya çerçevesindeki kümülatif rotasyon
         self.world_t = np.zeros(3, dtype=np.float64) # Dünya çerçevesindeki kümülatif konum
-        self.lidar_frame_count = 0
-        self.odom_count = 0
         self.is_airborne = False
+
+        # Görünmez Kalkan / Çarpışma Önleme (Collision Prevention #330)
+        self.obstacle_distances = [2001] * 72
+        self.min_obstacle_dist = 20.0
+        self.min_obstacle_sector = 0
+        self.last_obstacle_alert_time = 0.0
+        self.obstacle_scan_count = 0
 
     def connect_px4(self):
         """PX4 SITL MAVLink portuna (14580) bağlanır."""
@@ -303,8 +308,13 @@ class LidarOdometryPX4Bridge:
             pass
 
     def configure_px4_parameters(self):
-        """Tüm EKF2 ve güvenlik parametreleri 4005_gz_x500_vision airframe içinde zaten boot sırasında yüklenmektedir."""
-        print("✅ [AŞAMA 1] PX4 Parametreleri (GPS-Denied Lidar & Odometri Modu) Doğrulandı.")
+        """PX4 EKF2 ve Görünmez Kalkan (Collision Prevention) parametrelerini doğrular ve aktif eder."""
+        print("✅ [AŞAMA 1] PX4 Parametreleri (GPS-Denied Lidar & Görünmez Kalkan) Yapılandırılıyor...")
+        self.set_param("CP_DIST", 0.6, is_int=False)
+        self.set_param("CP_DELAY", 0.2, is_int=False)
+        self.set_param("CP_GUIDE_ANG", 30.0, is_int=False)
+        self.set_param("CP_GO_NO_DATA", 0, is_int=True)
+        print("🛡️ [GÖRÜNMEZ KALKAN] Çarpışma Önleme Kalkanı Hazır (Mesafe: 0.60m | 360° Lidar Kalkanı)")
 
     def send_global_origin(self):
         """EKF2'nin yerel harita koordinatlarını sabitlemesi için Global Origin ve Home tanımlar."""
@@ -411,6 +421,51 @@ class LidarOdometryPX4Bridge:
             if self.lidar_frame_count < 3:
                 print(f"⚠️ [SLAM HATA] process_xyz istisna: {e}")
 
+    def update_obstacles_from_xyz(self, xyz):
+        """3B noktalardan yatay uçuş düzlemindeki engelleri filtreleyip 72 sektöre (5° aralıklarla 360°) böler."""
+        try:
+            if xyz is None or len(xyz) == 0:
+                return
+            # Yatay uçuş düzlemindeki engelleri filtrele (Z: -0.6m ile +0.5m)
+            z_mask = (xyz[:, 2] > -0.6) & (xyz[:, 2] < 0.5) & np.isfinite(xyz).all(axis=1)
+            pts = xyz[z_mask]
+            if len(pts) == 0:
+                return
+
+            # Gazebo Sensör (FLU) -> MAVLink FRD:
+            # x_frd = x_sensor (İleri)
+            # y_frd = -y_sensor (Sağ)
+            x_frd = pts[:, 0]
+            y_frd = -pts[:, 1]
+            xy_dist = np.hypot(x_frd, y_frd)
+
+            valid = (xy_dist >= 0.15) & (xy_dist <= 20.0)
+            if not np.any(valid):
+                return
+
+            x_v = x_frd[valid]
+            y_v = y_frd[valid]
+            d_v = xy_dist[valid]
+
+            angles = np.arctan2(y_v, x_v)  # radyan [-pi, pi]
+            angles[angles < 0] += 2 * np.pi
+            bin_indices = (angles / (2 * np.pi / 72.0)).astype(int) % 72
+
+            dist_cm = np.clip(d_v * 100.0, 15, 2000).astype(np.uint16)
+            distances = np.full(72, 2001, dtype=np.uint16)
+            np.minimum.at(distances, bin_indices, dist_cm)
+
+            min_d = float(np.min(d_v))
+            min_bin = int(bin_indices[np.argmin(d_v)])
+
+            with self.lock:
+                self.obstacle_distances = distances.tolist()
+                self.min_obstacle_dist = min_d
+                self.min_obstacle_sector = min_bin
+                self.obstacle_scan_count += 1
+        except Exception:
+            pass
+
     def on_forward_lidar(self, msg: PointCloudPacked):
         """Gazebo GPU Lidarından gelen PointCloudPacked mesajını işler."""
         try:
@@ -418,14 +473,14 @@ class LidarOdometryPX4Bridge:
             if point_step < 12:
                 return
             n_points = len(msg.data) // point_step
-            if n_points < 50:
+            if n_points < 10:
                 return
             raw_arr = np.frombuffer(msg.data, dtype=np.float32)
             stride_floats = point_step // 4
             xyz = raw_arr.reshape(-1, stride_floats)[:, :3]
             if self.lidar_frame_count == 0:
                 print(f"📦 [LİDAR AKTİF] İlk nokta bulutu Gazebo'dan alındı ({len(xyz)} nokta, PointCloudPacked)!")
-            self.process_xyz(xyz)
+            self.update_obstacles_from_xyz(xyz)
         except Exception as e:
             if self.lidar_frame_count == 0:
                 print(f"⚠️ [LİDAR HATA] on_forward_lidar istisna: {e}")
@@ -446,7 +501,7 @@ class LidarOdometryPX4Bridge:
             xyz = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
             if self.lidar_frame_count == 0:
                 print(f"📦 [LİDAR AKTİF] İlk lazer taraması Gazebo'dan alındı ({len(xyz)} ışın, LaserScan)!")
-            self.process_xyz(xyz)
+            self.update_obstacles_from_xyz(xyz)
         except Exception as e:
             if self.lidar_frame_count == 0:
                 print(f"⚠️ [LİDAR HATA] on_laser_scan istisna: {e}")
@@ -581,6 +636,31 @@ class LidarOdometryPX4Bridge:
                         COV_POSE_21,
                         self.odom_count % 256
                     )
+
+                    # 3. Resmi MAVLink OBSTACLE_DISTANCE (#330) - 360° Görünmez Kalkan (17.5 Hz)
+                    if tick % 2 == 0:
+                        with self.lock:
+                            obs_dist = list(self.obstacle_distances)
+                            min_d = self.min_obstacle_dist
+                            min_sec = self.min_obstacle_sector
+
+                        self.mav.mav.obstacle_distance_send(
+                            0,  # time_usec
+                            mavutil.mavlink.MAV_DISTANCE_SENSOR_LASER,
+                            obs_dist,
+                            5,  # increment (deg)
+                            15,  # min_distance (cm)
+                            2000,  # max_distance (cm)
+                            5.0,  # increment_f
+                            0.0,  # angle_offset
+                            mavutil.mavlink.MAV_FRAME_BODY_FRD
+                        )
+
+                        if min_d < 0.85 and (time.time() - self.last_obstacle_alert_time) > 2.0:
+                            self.last_obstacle_alert_time = time.time()
+                            angle_deg = min_sec * 5
+                            yon = "ÖN" if (angle_deg < 30 or angle_deg > 330) else ("SAĞ" if 60 <= angle_deg <= 120 else ("ARKA" if 150 <= angle_deg <= 210 else "SOL"))
+                            print(f"🛡️ [GÖRÜNMEZ KALKAN] Engel Tespit Edildi! İstikamet: {yon} ({angle_deg}°) ~ {min_d:.2f}m | CP_DIST (0.60m) Fren Devrede!")
                 except Exception as e:
                     if tick % 70 == 0:
                         print(f"⚠️ [MAVLINK ODOM HATA]: {e}")
@@ -617,9 +697,30 @@ class LidarOdometryPX4Bridge:
 
         gz_node = Node()
 
-        # 1. Gazebo GPU Lidar Konuları (Gerekirse açılır; CPU yükünü %0 tutarak simülasyonu %100 hızda tutuyoruz)
-        # pointcloud_topics = [...]
-        # laserscan_topics = [...]
+        # 1. Gazebo 360° GPU Lidar Konuları (Görünmez Kalkan Engel Tespiti)
+        obs_pc_topics = [
+            "/forward_lidar/points",
+            "/forward_lidar/points/points",
+            "/world/benim_magaram/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/world/benim_magaram/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/world/tunnel_world/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+            "/world/tunnel_world/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan/points",
+        ]
+        for pt in obs_pc_topics:
+            gz_node.subscribe(PointCloudPacked, pt, self.on_forward_lidar)
+
+        obs_scan_topics = [
+            "/forward_lidar",
+            "/forward_lidar/scan",
+            "/world/benim_magaram/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan",
+            "/world/benim_magaram/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan",
+            "/world/buyuk_ev/model/x500_vision_0/link/forward_lidar_link/sensor/forward_lidar/scan",
+            "/world/buyuk_ev/model/x500_vision/link/forward_lidar_link/sensor/forward_lidar/scan",
+        ]
+        for st in obs_scan_topics:
+            gz_node.subscribe(LaserScan, st, self.on_laser_scan)
 
         # 2. Gazebo Odometri Konusuna Abone Ol (Ground-Truth & Karşılaştırma)
         sim_topics = [

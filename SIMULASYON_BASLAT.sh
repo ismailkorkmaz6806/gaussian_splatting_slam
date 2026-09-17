@@ -91,9 +91,9 @@ echo -e "\n${GREEN}🚀 [1/2] PX4 SITL ve Gazebo 3B Simülasyonu Açılıyor: ${
 if [ -d "$PX4_DIR" ]; then
     cd "$PX4_DIR"
     export DISPLAY="${DISPLAY:-:0}"
-    # Güncel dünyaları PX4 dizinine senkronize et
     cp -f "$SCRIPT_DIR/gazebo_cave_world/worlds/buyuk_ev.sdf" "$PX4_DIR/Tools/simulation/gz/worlds/buyuk_ev.sdf" 2>/dev/null || true
     cp -f "$SCRIPT_DIR/benim_magaram.sdf" "$PX4_DIR/Tools/simulation/gz/worlds/benim_magaram.sdf" 2>/dev/null || true
+    cp -f "$SCRIPT_DIR/px4_airframes/4005_gz_x500_vision" "$PX4_DIR/ROMFS/px4fmu_common/init.d-posix/airframes/4005_gz_x500_vision" 2>/dev/null || true
     
     export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$SCRIPT_DIR/gazebo_cave_world/worlds:$PX4_DIR/Tools/simulation/gz/worlds/aws_small_house_world/models:$PX4_DIR/Tools/simulation/gz/models:$SCRIPT_DIR/gazebo_cave_world/worlds/models"
     export PX4_GZ_WORLD="$SECILEN_DUNYA"
@@ -169,6 +169,7 @@ echo -e "${GREEN}   ✨ SİMÜLASYON VE QGROUNDCONTROL HAZIR!${NC}"
 echo -e "${CYAN}======================================================================${NC}"
 echo -e " 📍 Gazebo Penceresi : ${GREEN}AÇIK${NC} (Dünya: $SECILEN_DUNYA, Model: x500_vision)"
 echo -e " 📍 QGroundControl   : ${GREEN}AÇIK${NC} (UDP 14550 Bağlı)"
+echo -e " 📍 Görünmez Kalkan  : ${GREEN}AKTİF${NC} (CP_DIST: 0.60m | 360° Çarpışma Önleme Kalkanı)"
 echo -e " 📍 Kalkış / Arm     : ${GREEN}KİLİTLER AÇILDI (Hazır)${NC}"
 echo ""
 
@@ -179,9 +180,10 @@ while true; do
     echo "  [3] 📷 3B Haritalama / FPV Kokpitini Aç (İsteğe bağlı)"
     echo "  [4] 🚀 Dronu ARM ET (Motorları Başlat)"
     echo "  [5] 🛑 Dronu DISARM ET (Motorları Durdur / İndir)"
+    echo "  [6] 🤖 Tam Otonom Görev (Kalkış, Devriye, Geri Dönüş, İniş)"
     echo "  [0] ❌ Simülasyonu Kapat ve Çık"
     echo -e "${CYAN}----------------------------------------------------------------------${NC}"
-    read -p "Seçiminiz [0-5]: " CMD_SECIM
+    read -p "Seçiminiz [0-6]: " CMD_SECIM
 
     case $CMD_SECIM in
         1)
@@ -205,6 +207,10 @@ while true; do
         5)
             echo -e "${YELLOW}🛑 Dron DISARM Ediliyor...${NC}"
             python3 -c "from px4_mavlink_bridge import PX4VisionBridge; b=PX4VisionBridge(); b.connect() and b.disarm()" 2>/dev/null || true
+            ;;
+        6)
+            echo -e "${GREEN}🤖 Tam Otonom Görev Başlatılıyor...${NC}"
+            python3 "$SCRIPT_DIR/otonom_gorev.py"
             ;;
         0|"q"|"Q")
             echo -e "${YELLOW}Simülasyon sonlandırılıyor...${NC}"
