@@ -236,17 +236,15 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     all_quats = []
     all_opacity = []
 
-    is_cave = "drone" in output_ply.lower() or "cave" in video_file.lower() or "tunel" in video_file.lower()
-
     for idx in range(N):
         pts_loc = keyframe_pts3d[idx]       # Kameranın yerel 3B noktaları
         conf = keyframe_confs[idx]           # Noktaların güvenilirlik skorları
         rgb = frames[idx]['rgb_np']          # Orijinal renk bilgisi
         T_w = cam_poses[idx]                 # Kameranın Dünya koordinatlarındaki matrisi
 
-        # Gürültü ve uçuşan noktaları temizleme filtresi (Kristal netlik ve sıfır gürültü)
+        # Gürültü ve uçuşan noktaları temizleme filtresi
         dist = np.linalg.norm(pts_loc, axis=-1)
-        valid = (conf > 1.45) & (dist < 5.0) & (pts_loc[..., 2] > 0.15) & np.isfinite(pts_loc).all(axis=-1)
+        valid = (conf > 1.45) & (dist < 4.8) & (pts_loc[..., 2] > 0.15) & np.isfinite(pts_loc).all(axis=-1)
 
         pts_valid = pts_loc[valid]
         rgb_valid = rgb[valid]
@@ -259,15 +257,17 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
         pts_w = (T_w[:3, :3] @ pts_valid.T).T + T_w[:3, 3]
         pts_w[:, 1] = -pts_w[:, 1]  # OpenGL koordinat standart eşitlemesi (+Y yukarı)
 
-        # 3D Gaussian Splatting Ölçekleri (Net, keskin ve yüksek çözünürlüklü)
+        # 3D Gaussian Splatting Ölçekleri (Derinliğe göre adaptif anizotropik elipsoit boyutları - boşluksuz dolgun yapı)
         depths = pts_valid[:, 2]
-        base_radius = np.clip(0.008 * depths, 0.003, 0.035).astype(np.float32)
-        scales = np.column_stack([base_radius, base_radius * 0.7, base_radius * 0.4])
-        opacities = np.clip((conf_valid - 1.45) / 2.0 + 0.65, 0.5, 0.98).astype(np.float32)
+        base_radius = np.clip(0.016 * depths, 0.012, 0.055).astype(np.float32)
+        scales = np.column_stack([base_radius, base_radius * 0.85, base_radius * 0.60])
 
         # Dönüş Kuaterniyonu (rot_0, rot_1, rot_2, rot_3) - Varsayılan kimlik yönü [1, 0, 0, 0]
         quats = np.zeros((len(pts_valid), 4), dtype=np.float32)
         quats[:, 0] = 1.0
+
+        # Güvenilirliğe göre opaklık (Alpha/Opacity) hesaplama (0.50 - 0.98 arası şeffaflık)
+        opacities = np.clip((conf_valid - 1.45) / 2.0 + 0.65, 0.5, 0.98).astype(np.float32)
 
         all_xyz.append(pts_w.astype(np.float32))
         all_rgb.append(rgb_valid.astype(np.float32))
@@ -282,19 +282,27 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     quats_merged = np.vstack(all_quats)
     opac_merged = np.concatenate(all_opacity)
 
-    # Kamera yörüngesini OpenGL koordinatlarına eşitle
+    # Kamera yörüngesini OpenGL koordinatlarına göre hizala (+Y yukarı)
     traj_cams_gl = cam_poses[:, :3, 3].copy()
     traj_cams_gl[:, 1] = -traj_cams_gl[:, 1]
 
-    # Zemini tam Y = 0 hizasına oturtma (Yerçekimi düzlemi hizalama)
+    # Zemini tam Y = 0 hizasına oturtma (Doğal yerçekimi düzlemi hizalama, yapay eğme yok)
     ground_y = float(np.percentile(xyz_merged[:, 1], 2))
     xyz_merged[:, 1] -= ground_y
     traj_cams_gl[:, 1] -= ground_y
 
     # =========================================================================
-    # [ADIM 3.5] 📡 3B LiDAR Noktalarının Birleştirilmesi (Sadece Açıkça Belirtilmişse)
+    # [ADIM 3.5] 📡 Katı Hal (Solid-State) 3B LiDAR Noktalarının Birleştirilmesi
     # =========================================================================
-    lidar_npz = lidar_file if (lidar_file and os.path.exists(lidar_file)) else None
+    # Sadece mağara/dron modellerinde veya açıkça lidar_file verilmişse birleştir
+    is_cave = "drone" in output_ply.lower() or "cave" in video_file.lower() or "tunel" in video_file.lower()
+    lidar_npz = None
+    if lidar_file and os.path.exists(lidar_file):
+        lidar_npz = lidar_file
+    elif is_cave:
+        cand = os.path.join(CURR_DIR, "temp_lidar_pts.npz")
+        if os.path.exists(cand):
+            lidar_npz = cand
 
     if lidar_npz is not None and os.path.exists(lidar_npz):
         try:
@@ -305,6 +313,14 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
             sp = ld['start_pos'] if 'start_pos' in ld else np.array([-3.0, 0.0, 0.2], dtype=np.float32)
             traj_data = ld['traj'] if 'traj' in ld else None
 
+            # 🛡️ Mağara Dışı Uçuşan Noktaları Temizleme Filtresi:
+            # Gazebo mağarasının sınırları dışına kaçan (zemin/gökyüzü) gürültü noktalarını eler
+            valid_cave = (lp[:, 0] >= -2.5) & (lp[:, 0] <= 40.0) & \
+                         (lp[:, 1] >= -6.5) & (lp[:, 1] <= 6.5) & \
+                         (lp[:, 2] >= -0.2) & (lp[:, 2] <= 5.2)
+            lp = lp[valid_cave]
+            lr = lr[valid_cave]
+
             # Gazebo (X ileri, Y sol, Z yukarı) -> 3DGS Scene Koordinat Dönüşümü:
             # Z_gl = X_w - sp[0] (tünel boyunca ileri 0 -> 38m)
             # X_gl = -(Y_w - sp[1]) (tünel genişliği / yatay)
@@ -314,16 +330,17 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
             lz_gl = lp[:, 0] - sp[0]
             pts_l_gl = np.column_stack([lx_gl, ly_gl, lz_gl]).astype(np.float32)
 
-            n_l = len(pts_l_gl)
-            base_r = np.full(n_l, 0.045, dtype=np.float32)
-            scales_l = np.column_stack([base_r, base_r * 0.85, base_r * 0.60]).astype(np.float32)
-            quats_l = np.zeros((n_l, 4), dtype=np.float32)
-            quats_l[:, 0] = 1.0
-            opac_l = np.full(n_l, 0.95, dtype=np.float32)
-
             # Zemin seviyesini sıfırla
             l_ground = float(np.percentile(ly_gl, 2))
             pts_l_gl[:, 1] -= l_ground
+
+            n_l = len(pts_l_gl)
+            # Boşluksuz katı kaya yüzeyi için adaptif splat ölçekleri (0.050m dolgun elipsoit)
+            base_r = np.full(n_l, 0.050, dtype=np.float32)
+            scales_l = np.column_stack([base_r, base_r * 0.85, base_r * 0.60]).astype(np.float32)
+            quats_l = np.zeros((n_l, 4), dtype=np.float32)
+            quats_l[:, 0] = 1.0
+            opac_l = np.full(n_l, 0.96, dtype=np.float32)
 
             # LiDAR gerçek uçuş yörüngesini al
             if traj_data is not None and len(traj_data) > 0:
