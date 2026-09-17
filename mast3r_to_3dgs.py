@@ -282,24 +282,9 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     quats_merged = np.vstack(all_quats)
     opac_merged = np.concatenate(all_opacity)
 
-    # Kamera yörüngesini dünya koordinatlarına göre hizala
+    # Kamera yörüngesini OpenGL koordinatlarına eşitle
     traj_cams_gl = cam_poses[:, :3, 3].copy()
     traj_cams_gl[:, 1] = -traj_cams_gl[:, 1]
-    z_c = traj_cams_gl[:, 2]
-    y_c = traj_cams_gl[:, 1]
-    R_level = np.eye(3, dtype=np.float32)
-    if len(z_c) > 2:
-        poly_fit = np.polyfit(z_c, y_c, 1)
-        pitch = math.atan(poly_fit[0])
-        cos_p = math.cos(-pitch)
-        sin_p = math.sin(-pitch)
-        R_level = np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, cos_p, -sin_p],
-            [0.0, sin_p, cos_p]
-        ], dtype=np.float32)
-        xyz_merged = (R_level @ xyz_merged.T).T
-        traj_cams_gl = (R_level @ traj_cams_gl.T).T
 
     # Zemini tam Y = 0 hizasına oturtma (Yerçekimi düzlemi hizalama)
     ground_y = float(np.percentile(xyz_merged[:, 1], 2))
@@ -307,16 +292,9 @@ def build_gaussian_splats_from_mast3r(video_file="ofisvideo.mp4",
     traj_cams_gl[:, 1] -= ground_y
 
     # =========================================================================
-    # [ADIM 3.5] 📡 Katı Hal (Solid-State) 3B LiDAR Noktalarının Birleştirilmesi
+    # [ADIM 3.5] 📡 3B LiDAR Noktalarının Birleştirilmesi (Sadece Açıkça Belirtilmişse)
     # =========================================================================
-    # Sadece mağara/dron modellerinde veya özel olarak lidar_file verilmişse birleştir
-    lidar_npz = None
-    if lidar_file and os.path.exists(lidar_file):
-        lidar_npz = lidar_file
-    elif "drone" in output_ply.lower() or "cave" in video_file.lower() or "tunel" in video_file.lower():
-        cand = os.path.join(CURR_DIR, "temp_lidar_pts.npz")
-        if os.path.exists(cand):
-            lidar_npz = cand
+    lidar_npz = lidar_file if (lidar_file and os.path.exists(lidar_file)) else None
 
     if lidar_npz is not None and os.path.exists(lidar_npz):
         try:
