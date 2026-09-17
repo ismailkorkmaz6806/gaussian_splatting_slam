@@ -34,6 +34,8 @@ import time
 import numpy as np
 
 # Linux / Windows Optimus Hibrit Laptoplar için Harici NVIDIA RTX GPU ve Fallback Ayarları
+os.environ["__NV_PRIME_RENDER_OFFLOAD"] = "1"
+os.environ["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
 os.environ["SHIM_MCCOMPAT"] = "0x000000001"
 os.environ["__GL_SYNC_TO_VBLANK"] = "0"
 os.environ["vblank_mode"] = "0"
@@ -453,9 +455,9 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
         "💎 YÜKSEK KALİTE (90+ FPS, ~3.0M Splat)",
         "👑 TAM ÇÖZÜNÜRLÜK (6.0M Splat)"
     ]
-    # ✅ Güçlü GPU'dan tam yararlanmak ve en yüksek fotogerçekçilik için varsayılan "Tam Çözünürlük (stride=1)"
-    # Düşük sistemlerde "B" tuşuna basılarak Ultra Akıcı / Dengeli modlara geçilebilir.
-    quality_idx = 4
+    # ✅ Varsayılan olarak akıcı ve fotogerçekçi "Yüksek Kalite (~3.0M Splat, 90+ FPS)" aç
+    # Kullanıcı dilerse "B" tuşuyla Tam Çözünürlüğe (6.0M) veya Akıcı modlara geçebilir.
+    quality_idx = 3
     cur_stride = quality_strides[quality_idx]
 
     xyz = np.ascontiguousarray(raw_xyz[::cur_stride], dtype=np.float32)
@@ -464,7 +466,7 @@ def view_gaussian_splats(ply_path="gaussian_scene.ply"):
     room_bounds = FloorplanEstimator.calculate_bounds(xyz)
 
     # Splat nokta boyutu varsayılanı (Yüksek detaylı, keskin ve fotogerçekçi görünüm)
-    splat_point_size = 8.5 if cur_stride <= 1 else (12.0 if cur_stride == 2 else (16.0 if cur_stride == 3 else 20.0))
+    splat_point_size = 11.0 if cur_stride == 2 else (8.5 if cur_stride <= 1 else (15.0 if cur_stride == 3 else 20.0))
 
     # Modül Yöneticilerini Başlat
     culler = CeilingCuller()

@@ -28,6 +28,7 @@ fi
 
 # NVIDIA RTX Donanım Hızlandırması
 export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export __GL_SYNC_TO_VBLANK=0
 export vblank_mode=0
 
