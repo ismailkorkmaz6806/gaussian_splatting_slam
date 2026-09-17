@@ -591,5 +591,5 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
 if __name__ == "__main__":
     # Terminalden kamera numarası veya RTSP linki alabilir (varsayılan: gazebo)
     src = sys.argv[1] if len(sys.argv) > 1 else "gazebo"
-    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 35
     run_drone_capture(camera_source=src, target_keyframes=kfs)
