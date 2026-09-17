@@ -46,18 +46,8 @@ except Exception:
     HAS_GAZEBO_CONTROL = False
 
 def send_teleop_cmd(vx, vy, vz, wy, wz):
-    """Gazebo Sim /cmd_vel konusuna sıfır gecikmeli Twist hız ve açı komutu basar."""
-    if HAS_GAZEBO_CONTROL:
-        try:
-            msg = Twist()
-            msg.linear.x = float(vx)
-            msg.linear.y = float(vy)
-            msg.linear.z = float(vz)
-            msg.angular.y = float(wy)
-            msg.angular.z = float(wz)
-            _gz_pub_vel.publish(msg)
-        except Exception:
-            pass
+    """Pasif izleme modu: PX4 otopilotu ve kumanda kontrolü ile çakışmayı önlemek için cmd_vel gönderilmez."""
+    pass
 
 
 def run_drone_capture(camera_source=0, target_keyframes=50):
@@ -109,14 +99,11 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
             except Exception:
                 pass
 
-        # PX4 MAVLink Görsel Odometri Köprüsü (Arka planda kesintisiz 30 Hz EKF2 besler)
+        # PX4 MAVLink Görsel Odometri Köprüsü:
+        # drone_lidar_odometry_bridge.py zaten arka planda çalıştığı için
+        # burada ikinci bir köprü açmak EKF2 koordinatlarını çakıştırıp dronu yana fırlatıyordu.
+        # Odometri tamamen ana köprüye bırakıldı.
         px4_bridge = None
-        try:
-            from px4_mavlink_bridge import PX4VisionBridge
-            px4_bridge = PX4VisionBridge(publish_rate_hz=30)
-            px4_bridge.start_streaming()
-        except Exception as e:
-            print(f" ⚠️ MAVLink Köprüsü başlatılamadı: {e}")
 
         current_nose_pitch_deg = [0.0]
         current_drone_pos = [np.array([-3.0, 0.0, 0.20], dtype=np.float32)]
@@ -490,18 +477,7 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
 
         # Pitch P-kontrolörü (Kamera açısını hedefe kilitler)
         err_pitch = target_pitch_deg - current_pitch
-        target_wy = -max(-1.5, min(1.5, err_pitch * 0.08))
-        cur_wy = 0.50 * cur_wy + 0.50 * target_wy
 
-        # Kamera eğikken yatay uçuş irtifa kompansasyonu
-        np_rad = math.radians(current_pitch)
-        cmd_vx = cur_vx * math.cos(np_rad) + cur_vz * math.sin(np_rad)
-        cmd_vz = -cur_vx * math.sin(np_rad) + cur_vz * math.cos(np_rad)
-
-        # Gazebo'ya hız bas (15 Hz)
-        if time.time() - last_vel_send >= 0.065:
-            send_teleop_cmd(cmd_vx, cur_vy, cmd_vz, cur_wy, cur_wz)
-            last_vel_send = time.time()
 
         # [R] veya [3] tuşuna basıldığında veya terminalden girildiğinde taramayı başlat / bitir
         if key_ascii in (ord('r'), ord('R'), ord('3')) or stdin_cmd in ('3', 'r', 'rec', 'scan') or trigger_scan_flag[0]:
@@ -525,8 +501,8 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
                     if accumulated_lidar_pts:
                         all_lp = np.vstack(accumulated_lidar_pts)
                         all_lr = np.vstack(accumulated_lidar_rgb)
-                        # Voksel seyreltme (2.5 cm ızgara çözünürlüğü - yüksek yoğunluk, sıfır boşluk)
-                        grid = np.floor(all_lp / 0.025).astype(np.int32)
+                        # Voksel seyreltme (1.8 cm ızgara çözünürlüğü - ultra yoğun, boşluksuz katı kaya)
+                        grid = np.floor(all_lp / 0.018).astype(np.int32)
                         _, uidx = np.unique(grid, axis=0, return_index=True)
                         lp_ds = all_lp[uidx]
                         lr_ds = all_lr[uidx]
@@ -594,5 +570,5 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
 if __name__ == "__main__":
     # Terminalden kamera numarası veya RTSP linki alabilir (varsayılan: gazebo)
     src = sys.argv[1] if len(sys.argv) > 1 else "gazebo"
-    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    kfs = int(sys.argv[2]) if len(sys.argv) > 2 else 35
     run_drone_capture(camera_source=src, target_keyframes=kfs)
