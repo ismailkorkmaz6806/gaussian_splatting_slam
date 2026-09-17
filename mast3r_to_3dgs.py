@@ -459,5 +459,6 @@ end_header
 # Doğrudan terminalden çalıştırıldığında (Örn: python mast3r_to_3dgs.py testvideo2.mp4 50)
 if __name__ == "__main__":
     v_name = sys.argv[1] if len(sys.argv) > 1 else "ofisvideo.mp4"
-    n_kf = int(sys.argv[2]) if len(sys.argv) > 2 else 50
-    build_gaussian_splats_from_mast3r(v_name, num_keyframes=n_kf)
+    n_kf = int(sys.argv[2]) if len(sys.argv) > 2 else 35
+    out_name = sys.argv[3] if len(sys.argv) > 3 else "gaussian_scene.ply"
+    build_gaussian_splats_from_mast3r(v_name, output_ply=out_name, num_keyframes=n_kf)
