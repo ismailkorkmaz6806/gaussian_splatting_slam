@@ -109,14 +109,11 @@ def run_drone_capture(camera_source=0, target_keyframes=50):
             except Exception:
                 pass
 
-        # PX4 MAVLink Görsel Odometri Köprüsü (Arka planda kesintisiz 30 Hz EKF2 besler)
+        # PX4 MAVLink Görsel Odometri Köprüsü:
+        # drone_lidar_odometry_bridge.py zaten arka planda çalıştığı için
+        # burada ikinci bir köprü açmak EKF2 koordinatlarını çakıştırıp dronu yana fırlatıyordu.
+        # Odometri tamamen ana köprüye bırakıldı.
         px4_bridge = None
-        try:
-            from px4_mavlink_bridge import PX4VisionBridge
-            px4_bridge = PX4VisionBridge(publish_rate_hz=30)
-            px4_bridge.start_streaming()
-        except Exception as e:
-            print(f" ⚠️ MAVLink Köprüsü başlatılamadı: {e}")
 
         current_nose_pitch_deg = [0.0]
         current_drone_pos = [np.array([-3.0, 0.0, 0.20], dtype=np.float32)]
